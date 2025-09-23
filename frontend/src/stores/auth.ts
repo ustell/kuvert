@@ -1,48 +1,53 @@
-import { AppError } from '../libs/errors'
 import { defineStore } from "pinia";
+import { ApiError, AppError } from "../libs/errors";
 import type { User } from "../types/domain";
 import * as authApi from "../libs/authApi";
-import { lsSet } from "../libs/storage";
 
-export const useAuth = defineStore('auth', {
-    state: () => ({
-        user: null as User | null,
-        error: "",
-        isAuth: false,
-        isLoading: false
-    }),
-    actions: {
-        async hydrate() {
-            this.isLoading = true;
-            this.error = ''
-            try {
-                const u = await authApi.me()
-                this.user = u; this.isAuth = true;
-            } catch (e) {
-                this.user = null; this.isAuth = false;
-                this.error = e instanceof AppError ? e.message : 'Ошибка инициализации';
-            } finally {
-                this.isLoading = false;
-            }
-
-        },
-        async login(phone: string, password: string) {
-            this.isLoading = true
-            try {
-                const u = await authApi.login(phone, password);
-                this.user = u; this.isAuth = true;
-                lsSet('Sessions', u.name)
-            } catch (e) {
-                this.user = null; this.isAuth = false;
-                this.error = e instanceof Error ? e.message : 'Ошибка входа';
-                console.log("Ошибка авторизациии");
-
-                throw e; // чтобы UI мог показать тост/валидацию
-            } finally {
-                this.isLoading = false;
-            }
-
+export const useAuth = defineStore("auth", {
+  state: () => ({
+    user: null as User | null,
+    error: "",
+    isLoading: false,
+  }),
+  getters: {
+    isAuth: (s) => !!s.user,
+    role: (s) => s.user?.role ?? null,
+  },
+  actions: {
+    async fetchMe() {
+      console.log("fetch");
+      this.isLoading = true;
+      this.error = "";
+      try {
+        const res = await authApi.me();
+        if (res.authenticated && res.user) {
+          this.user = res.user;
+          return true;
         }
-
-    }
-})
+        this.user = null;
+        return false;
+      } catch (e) {
+        this.user = null;
+        this.error = e instanceof ApiError ? e.message : "Session check failed";
+      } finally {
+        this.isLoading = false;
+      }
+    },
+    async login(phone: string, password: string) {
+      this.isLoading = true;
+      this.error = "";
+      try {
+        const { user } = await authApi.login(phone, password);
+        this.user = user;
+        return true;
+      } catch (error) {
+        this.user = null;
+        this.error =
+          error instanceof ApiError ? error.message : "Login failed;";
+        return false;
+      } finally {
+        this.isLoading = false;
+      }
+    },
+  },
+});
