@@ -1,0 +1,112 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TransactionStatus {
+  pending
+  accepted
+  rejected
+}
+
+model Role {
+  id        String     @id @default(uuid()) @db.Uuid
+  name      String     @unique
+  fromRules RoleRule[] @relation("FromRole")
+  toRules   RoleRule[] @relation("ToRole")
+  users     User[]
+}
+
+model RoleRule {
+  id         String @id @default(uuid()) @db.Uuid
+  fromRoleId String @db.Uuid
+  toRoleId   String @db.Uuid
+
+  fromRole   Role   @relation("FromRole", fields: [fromRoleId], references: [id], onDelete: Cascade)
+  toRole     Role   @relation("ToRole",   fields: [toRoleId],   references: [id], onDelete: Cascade)
+
+  @@unique([fromRoleId, toRoleId])
+  @@index([fromRoleId])
+  @@index([toRoleId])
+}
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  phone     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+  isActive  Boolean  @default(true)
+
+  roleId    String?  @db.Uuid
+  role      Role?    @relation(fields: [roleId], references: [id])
+
+  // связи
+  inventories Inventory[]
+  fromTx       Transaction[] @relation("TxFromUser")
+  toTx         Transaction[] @relation("TxToUser")
+}
+
+model Item {
+  id        String   @id @default(uuid()) @db.Uuid
+  sku       String   @unique
+  name      String
+  createdAt DateTime @default(now())
+
+  inventories Inventory[]
+  recipesOf    Recipe[]        @relation("RecipeItem")         // itemId -> итоговый товар
+  recipesComp  Recipe[]        @relation("RecipeComponent")    // componentItemId -> компонент
+  transactions Transaction[]
+}
+
+model Inventory {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  itemId String @db.Uuid
+  units  Int    @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, itemId])
+  @@index([userId])
+  @@index([itemId])
+}
+
+model Recipe {
+  id              String @id @default(uuid()) @db.Uuid
+  itemId          String @db.Uuid
+  componentItemId String @db.Uuid
+  qty             Int
+
+  item          Item @relation("RecipeItem",      fields: [itemId],          references: [id], onDelete: Cascade)
+  componentItem Item @relation("RecipeComponent", fields: [componentItemId], references: [id], onDelete: Cascade)
+
+  @@unique([itemId, componentItemId])
+  @@index([itemId])
+  @@index([componentItemId])
+}
+
+model Transaction {
+  id         String            @id @default(uuid()) @db.Uuid
+  fromUserId String            @db.Uuid
+  toUserId   String            @db.Uuid
+  itemId     String            @db.Uuid
+  units      Int
+  status     TransactionStatus @default(pending)
+  createdAt  DateTime          @default(now())
+
+  fromUser User @relation("TxFromUser", fields: [fromUserId], references: [id])
+  toUser   User @relation("TxToUser",   fields: [toUserId],   references: [id])
+  item     Item @relation(fields: [itemId], references: [id])
+
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@index([itemId])
+  @@index([status])
+}
