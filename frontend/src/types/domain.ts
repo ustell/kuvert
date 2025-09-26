@@ -35,6 +35,7 @@ export interface User {
   isActive: boolean;
   roleId: string;
   role?: Role;
+  inventaries?: Inventory[];
 }
 
 export interface Item {

@@ -1,57 +1,69 @@
-import { PrismaClient } from "@prisma/client";
+import { jwtVerify, SignJWT, type JWTPayload } from "jose";
+
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { prisma } from "../lib/prisma";
 import bcrypt from "bcryptjs";
-import { z } from "zod";
-import { env } from "../lib/env";
-import { sign } from "../lib/jwt";
+import { createToken } from "../lib/token";
 
-const prisma = new PrismaClient();
-const LoginDto = z.object({
-  phone: z.string().min(3),
-  password: z.string().min(1),
-});
+// CORS helper (для dev, когда фронт на другом порту)
+function setCors(res: VercelResponse) {
+  const origin = process.env.CORS_ORIGIN ?? "";
+  if (origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  }
+}
 
-export default async function handler(req: any, res: any) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  setCors(res);
+
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method Not Allowed" });
+  }
+
   try {
-    if (req.method !== "POST")
-      return res.status(405).send("METHOD_NOT_ALLOWED");
+    const { phone, password } = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {}
+    if (!phone || !password) {
+      return res.status(401).json({ error: "Неверные учетные данные" });
+    }
+    const user = await prisma.user.findUnique({ where: { phone }, select: { id: true, name: true, phone: true, password: true, isActive: true, inventories: true } })
+    if (!user || user.isActive === false) {
+      return res.status(401).json({ error: "Неверные учетные данные" });
+    }
 
-    // body может прийти строкой
-    const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-    const data = LoginDto.parse(body);
+    const hash = bcrypt.compare(password, user.password);
+    if (!hash) {
+      return res.status(401).json({ error: "Неверные учетные данные" });
+    }
+    const secret = new TextEncoder().encode(process.env.AUTH_SECRET || "");
+    const days = Number(process.env.COOKIE_MAX_DAYS || "7");
+    const cookieName = process.env.COOKIE_NAME || "session";
 
-    const user = await prisma.user.findUnique({
-      where: { phone: data.phone },
-      include: { role: true },
-    });
-    if (!user || !user.isActive)
-      return res.status(401).json({ error: "INVALID_CREDENTIALS" });
+    const token = await new SignJWT({ uid: user.id })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt()
+      .setExpirationTime(`${days}d`)
+      .sign(secret);
 
-    const okPwd = await bcrypt.compare(data.password, user.password);
-    if (!okPwd) return res.status(401).json({ error: "INVALID_CREDENTIALS" });
-
-    const token = await sign(
-      { userId: user.id, roleId: user.roleId },
-      Number(env.COOKIE_MAX_DAYS)
-    );
-    const maxAge = Number(env.COOKIE_MAX_DAYS) * 24 * 60 * 60;
-
-    res.setHeader(
-      "Set-Cookie",
-      `${env.COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}; Secure`
-    );
-
-    res.status(200).json({
-      user: {
-        id: user.id,
-        name: user.name,
-        phone: user.phone,
-        role: user.role ? { id: user.role.id, name: user.role.name } : null,
-        createdAt: user.createdAt,
-        isActive: user.isActive,
-      },
-    });
-  } catch (e: any) {
-    console.error("LOGIN_ERROR:", e);
-    res.status(500).json({ error: "INTERNAL" });
+    const maxAge = days * 24 * 60 * 60;
+    const parts = [
+      `${cookieName}=${token}`,
+      "Path=/",
+      "HttpOnly",
+      "SameSite=Lax",
+    ];
+    parts.push(`Max-Age=${maxAge}`);
+    res.setHeader("Set-Cookie", parts.join("; "));
+    const softUser = {
+      name: user.name,
+      phone: user.phone,
+      id: user.id
+    }
+    console.log(user)
+    return res.status(200).json({ token: token, user: softUser });
+  } catch (error) {
+    return res.status(500).json({ error: "Internal Server Error" });
   }
 }

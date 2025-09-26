@@ -1,48 +1,106 @@
-import { AppError } from '../libs/errors'
 import { defineStore } from "pinia";
 import type { User } from "../types/domain";
-import * as authApi from "../libs/authApi";
-import { lsSet } from "../libs/storage";
+import { ApiError, request } from "../libs/fetch";
+import { tokenStorage } from "../libs/token";
+import http from "../libs/http";
 
-export const useAuth = defineStore('auth', {
-    state: () => ({
-        user: null as User | null,
-        error: "",
-        isAuth: false,
-        isLoading: false
+
+type State = {
+    users: User | null;
+    loading: boolean;
+    error: string | null;
+    isFetchingMe: boolean;
+};
+export const useAuth = defineStore("auth", {
+
+
+    state: (): State => ({
+        users: null,
+        loading: false,
+        error: null,
+        isFetchingMe: false
     }),
+    getters: {
+        isAutorizited: (s) => s.users !== null
+    },
     actions: {
-        async hydrate() {
-            this.isLoading = true;
-            this.error = ''
-            try {
-                const u = await authApi.me()
-                this.user = u; this.isAuth = true;
-            } catch (e) {
-                this.user = null; this.isAuth = false;
-                this.error = e instanceof AppError ? e.message : 'Ошибка инициализации';
-            } finally {
-                this.isLoading = false;
-            }
-
+        authHeaders() {
+            const token = tokenStorage.get();
+            return token ? { Authorization: `Bearer ${token}` } : {};
         },
         async login(phone: string, password: string) {
-            this.isLoading = true
+            this.loading = true
             try {
-                const u = await authApi.login(phone, password);
-                this.user = u; this.isAuth = true;
-                lsSet('Sessions', u.name)
-            } catch (e) {
-                this.user = null; this.isAuth = false;
-                this.error = e instanceof Error ? e.message : 'Ошибка входа';
-                console.log("Ошибка авторизациии");
+                const res = await http<{ data?: { user?: User; token?: string }; user?: User; token?: string }>("POST", "api/auth/login", { phone, password });
+                if (!res.ok) {
+                    this.error = res.error ?? `HTTP ${res.status}`
+                }
+                const payload = (res.data as any).data ?? res.data ?? {}
+                const user = (payload && (payload.user ?? payload)) as User | undefined
+                const token = (payload && payload.token) ?? (res.data as any).token ?? null
+                console.log("=====PAYLOAD=====")
+                console.log(payload)
+                console.log("======USER======")
+                console.log(user)
+                console.log("======TOKEN======")
+                console.log(token)
 
-                throw e; // чтобы UI мог показать тост/валидацию
+                if (!user) {
+                    this.error = "User not found"
+                    return
+                }
+                if (token && typeof token === 'string') {
+                    tokenStorage.set(token)
+                }
+                this.users = user
+                return true
+            } catch (err: any) {
+                this.error = err?.message ?? "Unknown error"
+                return false
             } finally {
-                this.isLoading = false;
+                this.loading = false
             }
+        },
 
-        }
+        async me(signal?: AbortSignal) {
+            this.loading = true
+            this.isFetchingMe = true
+            try {
+                const res = await http<{ data?: User, user?: User }>("GET", "api/auth/me", undefined, {
+                    Headers: this.authHeaders(),
+                    signal,
+                    timeoutMs: 8000,
+                });
+                console.log("tokenStorage.clear();")
+
+                if (!res.ok) {
+                    if (res.status === 401 || res.status === 403) {
+                        tokenStorage.clear();
+                        console.log("tokenStorage.clear();")
+                        this.users = null;
+                    }
+                    this.error = res.error ?? `HTTP ${res.status}`
+                    return false
+                }
+                const payload = (res.data as any).data ?? res.data ?? res
+                const user = (payload && (payload.user ?? payload)) as User | null
+                console.log("=====RES=====")
+                console.log(res.data)
+                console.log("=====PAYLOAD=====")
+                console.log(payload)
+                console.log("======USER======")
+                console.log(user)
+
+                this.users = user
+                return true
+            } catch (err: any) {
+                this.error = err?.message ?? "Unknown error"
+                return false
+            } finally {
+                this.loading = false
+                this.isFetchingMe = false
+            }
+        },
 
     }
 })

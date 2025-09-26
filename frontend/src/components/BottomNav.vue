@@ -1,29 +1,33 @@
 <template>
-    <nav class="bottom-nav" role="navigation" aria-label="Главная навигация">
-        <div class="wrap">
-            <RouterLink class="tab" :class="{ active: is('/dashboard') }" to="/">
-                <LayoutDashboard size="18" aria-hidden="true" />
-                <span>Главная</span>
-            </RouterLink>
-            <RouterLink class="tab" :class="{ active: is('/accept') }" to="/accept">
-                <ArrowLeftRight size="18" aria-hidden="true" />
-                <span>Принять</span>
-            </RouterLink>
-            <RouterLink class="tab" :class="{ active: is('/create') }" to="/create">
-                <Plus size="18" aria-hidden="true" />
-                <span>Создать</span>
-            </RouterLink>
-            <RouterLink class="tab" :class="{ active: is('/login') }" to="/login">
-                <Settings size="18" aria-hidden="true" />
-                <span>auth</span>
-            </RouterLink>
-        </div>
-    </nav>
+  <nav class="bottom-nav">
+    <RouterLink to="/" class="tab" :class="{ active: is('/') }">
+      <div class="ic">🏠</div>
+      <div>Dashboard</div>
+    </RouterLink>
+    <RouterLink to="/accept" class="tab" :class="{ active: is('/accept') }">
+      <div class="ic">🔁</div>
+      <div>Accept</div>
+    </RouterLink>
+    <RouterLink to="/create" class="tab" :class="{ active: is('/create') }">
+      <div class="ic">➕</div>
+      <div>Create</div>
+    </RouterLink>
+    <RouterLink to="/admin" class="tab" :class="{ active: is('/admin') }">
+      <div class="ic">⚙️</div>
+      <div>Admin</div>
+    </RouterLink>
+    <RouterLink v-if="!auth.isAutorizited" to="/login" class="tab" :class="{ active: is('/login') }">
+      <div class="ic">⚙️</div>
+      <div>Login</div>
+    </RouterLink>
+  </nav>
 </template>
 
 <script setup lang="ts">
-import { useRoute, RouterLink } from 'vue-router';
-import { LayoutDashboard, ArrowLeftRight, Plus, Settings } from 'lucide-vue-next';
+import { useRoute } from "vue-router";
+import { useAuth } from "../stores/auth";
 const route = useRoute();
-const is = (p: string) => route.path.startsWith(p);
+const is = (p: string) => route.path === p;
+
+const auth = useAuth()
 </script>

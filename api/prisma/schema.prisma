@@ -47,7 +47,7 @@ model User {
   role      Role?    @relation(fields: [roleId], references: [id])
 
   // связи
-  inventories Inventory[]
+  inventories  Inventory[]
   fromTx       Transaction[] @relation("TxFromUser")
   toTx         Transaction[] @relation("TxToUser")
 }

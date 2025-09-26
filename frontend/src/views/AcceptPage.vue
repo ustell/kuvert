@@ -1,50 +1,44 @@
 <template>
-    <section class="card">
-        <div class="h1">Accept Transfers</div>
-        <div class="sub">Review and approve incoming transfers</div>
-    </section>
+  <div class="container">
+    <div class="page-head">
+      <div class="title-18">Accept Transfers</div>
+      <div class="muted">Review and approve incoming transfers</div>
+    </div>
 
-    <section class="card mt16">
-        <div class="space">
-            <div class="row">
-                <div class="icon">⏱</div>
-                <strong>Pending Transfers</strong>
-            </div>
-            <span class="badge">1 waiting</span>
-        </div>
-    </section>
+    <Card padded>
+      <div class="row-between">
+        <div class="title-16">Pending Transfers</div>
+        <span class="chip">1 waiting</span>
+      </div>
+    </Card>
 
-    <section class="card mt16">
-        <div class="space">
-            <strong>Transfer #2</strong>
-            <span class="badge pending">pending</span>
-        </div>
-        <div class="small mt8">From: Mike Johnson • 16.01.2024</div>
+    <Card padded>
+      <div class="row-between mb8">
+        <div class="title-16">Transfer #2</div>
+        <Badge kind="pending">pending</Badge>
+      </div>
+      <div class="muted mb12">From: Mike Johnson • 16.01.2024</div>
 
-        <div class="list mt16">
-            <div class="list-item">
-                <div class="row">
-                    <div class="icon">⬢</div>
-                    <div>Smartphone Assembly</div>
-                </div>
-                <span class="badge">3 units</span>
-            </div>
-            <div class="list-item">
-                <div class="row">
-                    <div class="icon">⬢</div>
-                    <div>Laptop Kit</div>
-                </div>
-                <span class="badge">2 units</span>
-            </div>
-        </div>
+      <ListItem>
+        <template #default>Smartphone Assembly</template>
+        <template #right><span class="pill">3 units</span></template>
+      </ListItem>
+      <ListItem>
+        <template #default>Laptop Kit</template>
+        <template #right><span class="pill">2 units</span></template>
+      </ListItem>
 
-        <div class="row" style="gap:10px;margin-top:14px">
-            <button class="btn primary full">✓ Accept</button>
-            <button class="btn full">✗ Reject</button>
-        </div>
-    </section>
+      <div class="btn-row">
+        <Button variant="primary">✓ Accept</Button>
+        <Button variant="danger">✕ Reject</Button>
+      </div>
+    </Card>
+  </div>
 </template>
-<script setup>
-</script>
 
-<style></style>
+<script setup lang="ts">
+import Card from "../components/Card.vue";
+import Badge from "../components/Badge.vue";
+import Button from "../components/Button.vue";
+import ListItem from "../components/ListItem.vue";
+</script>
