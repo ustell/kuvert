@@ -1,0 +1,25 @@
+# OS / IDE
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+.vscode/
+.idea/
+
+# Node
+node_modules/
+**/node_modules/
+pnpm-lock.yaml
+# package-lock.json оставляем под контроль версий
+
+# Builds
+dist/
+build/
+.out/
+.cache/
+.temp/
+coverage/
+.vite/
+.next/
+
+# Env
