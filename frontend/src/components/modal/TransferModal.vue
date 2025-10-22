@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import Modal from './Modal.vue';
-import Button from '../Button.vue';
 import { computed } from 'vue';
-import type { Inventory, Item } from '../../types/domain';
+import type { Inventory } from '../../types/domain';
 
 const props = defineProps<{
   modelValue: boolean;
   title: string;
-  userInv: Inventory;
+  userInv: Inventory[];
 }>();
 
 const emit = defineEmits<{
@@ -89,23 +88,13 @@ const onSelectItem = (item: Inventory) => {
 }
 .chips {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 8px;
   padding: 0;
   margin: 0;
   list-style: none;
 }
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid var(--ui-border, #ececec);
-  padding: 8px 10px;
-  border-radius: 999px;
-  background: var(--ui-surface, #fff);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03);
-  max-width: 100%;
-}
+
 .chip:hover {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }

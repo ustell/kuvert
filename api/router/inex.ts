@@ -1,4 +1,5 @@
 // auth/router.ts
+import transfer from '../transfer/transfet';
 import { Router } from 'express';
 import login from '../auth/login';
 import me from '../auth/me';
@@ -6,6 +7,7 @@ import items from '../item/item';
 import users from '../user/users';
 import item from '../item/item';
 import inventories from '../inventories/inventories';
+import recipes from '../recipes/recipes';
 
 const r = Router();
 
@@ -25,7 +27,12 @@ r.delete('/items', item);
 r.post('/items', item);
 r.patch('/items', item);
 
-// inventory
-r.post('/inventories', inventories);
-r.get('/inventories', inventories);
+r.get('/recipes', recipes);
+r.post('/recipes', recipes);
+
+r.get('/transfer', transfer);
+r.post('/transfer', transfer);
+r.patch('/transfer', transfer);
+r.delete('/transfer', transfer);
+
 export default r;

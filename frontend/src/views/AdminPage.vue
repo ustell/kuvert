@@ -4,8 +4,9 @@ import Button from '../components/Button.vue';
 import AdminUsers from './admin/AdminUsers.vue';
 import AdminGoods from './admin/AdminGoods.vue';
 import { useItem } from '../stores/item';
+import AdminTransfer from './admin/AdminTransfer.vue';
 
-const tab = ref<'users' | 'goods'>('users');
+const tab = ref<'users' | 'goods' | 'transfer'>('users');
 const showAddGood = ref<boolean>(false);
 const items = useItem();
 
@@ -36,9 +37,15 @@ const saved = async (payload: { sku: string; name: string }) => {
       <button class="tab" :class="{ active: tab === 'goods' }" @click="tab = 'goods'">
         📦 Goods
       </button>
+      <button class="tab" :class="{ active: tab === 'transfer' }" @click="tab = 'transfer'">
+        📦 transfer
+      </button>
     </div>
 
-    <component :is="tab === 'users' ? AdminUsers : AdminGoods" class="mt12" />
+    <component
+      :is="tab === 'users' ? AdminUsers : tab === 'goods' ? AdminGoods : AdminTransfer"
+      class="mt12"
+    />
   </div>
 </template>
 

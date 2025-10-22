@@ -1,16 +1,16 @@
 // prisma/seed.ts
-import { PrismaClient } from "@prisma/client";
-import bcrypt from "bcryptjs";
+import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
 async function main() {
   // --- Роли (upsert по name)
   const [rAdmin, rWarehouse, rCourier, rClient] = await Promise.all([
-    prisma.role.upsert({ where: { name: "admin" }, update: {}, create: { name: "admin" } }),
-    prisma.role.upsert({ where: { name: "warehouse" }, update: {}, create: { name: "warehouse" } }),
-    prisma.role.upsert({ where: { name: "courier" }, update: {}, create: { name: "courier" } }),
-    prisma.role.upsert({ where: { name: "client" }, update: {}, create: { name: "client" } }),
+    prisma.role.upsert({ where: { name: 'admin' }, update: {}, create: { name: 'admin' } }),
+    prisma.role.upsert({ where: { name: 'warehouse' }, update: {}, create: { name: 'warehouse' } }),
+    prisma.role.upsert({ where: { name: 'courier' }, update: {}, create: { name: 'courier' } }),
+    prisma.role.upsert({ where: { name: 'client' }, update: {}, create: { name: 'client' } }),
   ]);
 
   // --- Правила передачи (кто кому может)
@@ -30,14 +30,14 @@ async function main() {
   // --- Товары (минимум)
   const [itemA, itemB] = await Promise.all([
     prisma.item.upsert({
-      where: { sku: "SKU-001" },
+      where: { sku: 'SKU-001' },
       update: {},
-      create: { sku: "SKU-001", name: "Box A" },
+      create: { sku: 'SKU-001', name: 'Box A' },
     }),
     prisma.item.upsert({
-      where: { sku: "SKU-002" },
+      where: { sku: 'SKU-002' },
       update: {},
-      create: { sku: "SKU-002", name: "Box B" },
+      create: { sku: 'SKU-002', name: 'Box B' },
     }),
   ]);
 
@@ -49,63 +49,58 @@ async function main() {
   });
 
   // --- Пользователи (пароль = bcrypt("123"))
-  const hash123 = bcrypt.hashSync("123", 10);
+  const hash123 = bcrypt.hashSync('123', 10);
 
   const [uWarehouse, uCourier, uClient, uOleg] = await Promise.all([
     prisma.user.upsert({
-      where: { phone: "+70000000001" },
+      where: { phone: '+70000000001' },
       update: {},
       create: {
-        name: "Склад №1",
-        phone: "+70000000001",
+        name: 'Склад №1',
+        phone: '+70000000001',
         password: hash123,
         isActive: true,
-        role: { connect: { name: "warehouse" } }, // коннект по name
+        role: { connect: { name: 'warehouse' } }, // коннект по name
       },
     }),
     prisma.user.upsert({
-      where: { phone: "+70000000002" },
+      where: { phone: '+70000000002' },
       update: {},
       create: {
-        name: "Курьер",
-        phone: "+70000000002",
+        name: 'Курьер',
+        phone: '+70000000002',
         password: hash123,
         isActive: true,
-        role: { connect: { name: "courier" } },
+        role: { connect: { name: 'courier' } },
       },
     }),
     prisma.user.upsert({
-      where: { phone: "+70000000003" },
+      where: { phone: '+70000000003' },
       update: {},
       create: {
-        name: "Клиент",
-        phone: "+70000000003",
+        name: 'Клиент',
+        phone: '+70000000003',
         password: hash123,
         isActive: true,
-        role: { connect: { name: "client" } },
+        role: { connect: { name: 'client' } },
       },
     }),
     prisma.user.upsert({
-      where: { phone: "+77084057657" }, // твой логин
+      where: { phone: '+77084057657' },
       update: {},
       create: {
-        name: "Oleg",
-        phone: "+77084057657",
+        name: 'Oleg',
+        phone: '+77084057657',
         password: hash123,
         isActive: true,
-        role: { connect: { name: "courier" } },
+        role: { connect: { name: 'courier' } },
       },
     }),
   ]);
 
   // --- Стартовые остатки (необязательно)
-  await prisma.inventory.upsert({
-    where: { userId_itemId: { userId: uWarehouse.id, itemId: itemB.id } },
-    update: { units: 100 },
-    create: { userId: uWarehouse.id, itemId: itemB.id, units: 100 },
-  });
 
-  console.log("Seed done");
+  console.log('Seed done');
 }
 
 main()

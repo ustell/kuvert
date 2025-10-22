@@ -1,6 +1,7 @@
 // src/services/boot.ts
 import { pinia } from '../stores/pinia';
 import { useAuth, useUsers, useItem } from '../stores';
+import { useTrans } from '../stores/transfer';
 
 export type BootOptions = {
   signal?: AbortSignal;
@@ -8,6 +9,7 @@ export type BootOptions = {
     me?: boolean;
     users?: boolean;
     items?: boolean;
+    trans?: boolean;
   };
 };
 
@@ -21,6 +23,7 @@ export async function boot(opts: BootOptions = {}): Promise<BootResult> {
     me: true,
     users: true,
     items: true,
+    trans: true,
     ...(opts.with ?? {}),
   };
 
@@ -28,6 +31,7 @@ export async function boot(opts: BootOptions = {}): Promise<BootResult> {
   const authStore = useAuth();
   const usersStore = useUsers();
   const itemStore = useItem();
+  const itemTrans = useTrans();
 
   const tasks: Promise<any>[] = [];
 
@@ -39,6 +43,9 @@ export async function boot(opts: BootOptions = {}): Promise<BootResult> {
   }
   if (cfg.items) {
     tasks.push(itemStore.fetchItems?.(opts.signal) ?? Promise.resolve(true));
+  }
+  if (cfg.trans) {
+    tasks.push(itemTrans.fetchItems?.(opts.signal) ?? Promise.resolve(true));
   }
 
   const results = await Promise.allSettled(tasks);

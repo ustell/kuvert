@@ -69,7 +69,7 @@ export const useItem = defineStore('item', {
           'POST',
           '/api/auth/items',
           { sku, name, comp }, // ← массив { sku, qty }
-          { delay: 300 }, // (необязательно) задержку меньше сделай :)
+          { delay: 3000 },
         );
 
         if (!res.ok) {

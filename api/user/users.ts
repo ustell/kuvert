@@ -7,7 +7,11 @@ export default async function users(req: qww, res: VercelResponse) {
   switch (req.method) {
     case 'GET':
       try {
-        const data = await prisma.user.findMany();
+        const data = await prisma.user.findMany({
+          where: {
+            isActive: true,
+          },
+        });
         return res.status(200).json({ data });
       } catch (error) {
         console.log(`GET /api/user/users failed: ${error.message}`);
@@ -38,9 +42,13 @@ export default async function users(req: qww, res: VercelResponse) {
     case 'DELETE':
       try {
         const { id } = req.body;
+        console.log(id);
         if (!id) return res.status(400).json({ error: 'id is required' });
-        const selectedUser = await prisma.user.delete({
+        const selectedUser = await prisma.user.update({
           where: { id },
+          data: {
+            isActive: false,
+          },
         });
         return res.status(200).json({ selectedUser });
       } catch (error) {

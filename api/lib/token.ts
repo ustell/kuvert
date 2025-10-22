@@ -25,16 +25,20 @@ export const verifyToken = async (token: string) => {
 
     const user = await prisma.user.findUnique({
       where: { id: uid },
-      select: {
-        id: true,
-        name: true,
-        phone: true,
+      include: {
         role: true,
         inventories: {
-          select: {
-            units: true,
+          include: {
             item: {
-              select: { id: true, sku: true, name: true },
+              include: {
+                // Рецепты, где item является итоговым продуктом
+                recipesOf: {
+                  include: {
+                    // Сам компонент (экран, батарея и т.д.)
+                    componentItem: true,
+                  },
+                },
+              },
             },
           },
         },

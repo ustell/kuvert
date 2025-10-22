@@ -9,7 +9,17 @@ export default async function Inventories(req: VercelRequest, res: VercelRespons
       try {
         const payload = await prisma.inventory.findMany({
           where: { userId: id },
-          include: { item: true },
+          include: {
+            item: {
+              include: {
+                recipesOf: {
+                  include: {
+                    componentItem: true,
+                  },
+                },
+              },
+            },
+          },
         });
         return res.status(200).json({ payload });
       } catch (error) {

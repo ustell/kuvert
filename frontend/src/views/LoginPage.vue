@@ -1,57 +1,67 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import Card from "../components/Card.vue";
-import Button from "../components/Button.vue";
-import { useAuth } from "../stores/auth";
+import { ref } from 'vue';
+import Card from '../components/Card.vue';
+import Button from '../components/Button.vue';
+import { useAuth } from '../stores/auth';
 
-const phone = ref("+70000000001");
-const password = ref("123");
+const phone = ref('+70000000001');
+const password = ref('123');
 const remember = ref(true);
 const show = ref(false);
-const auth = useAuth()
+const auth = useAuth();
 
 const onSubmit = (e: Event) => {
-  console.log('dsa')
-  e.preventDefault()
-  auth.login(phone.value, password.value)
-}
+  e.preventDefault();
+  auth.login(phone.value, password.value);
+};
 </script>
 
 <template>
   <div class="container login-wrap">
     <div class="logo">📦</div>
-    <div class="brand">Production Tracker</div>
-    <div class="muted center">Sign in to continue</div>
+    <div class="brand">Трекер товара</div>
+    <div class="center">Авторизация</div>
 
     <Card padded>
       <form @submit="onSubmit">
-        <label class="label">Phone</label>
+        <label class="label">Телефон</label>
         <div class="field">
-          <input v-model.trim="phone" type="tel" inputmode="tel" placeholder="+77000000000" class="inp"
-            autocomplete="tel" />
+          <input
+            v-model.trim="phone"
+            type="tel"
+            inputmode="tel"
+            placeholder="+77000000000"
+            class="inp"
+            autocomplete="tel"
+          />
         </div>
         <div class="hint error">123</div>
 
-        <label class="label mt12">Password</label>
+        <label class="label mt12">Пароль</label>
         <div class="field">
-          <input v-model="password" :type="show ? 'text' : 'password'" placeholder="••••••••" class="inp"
-            autocomplete="current-password" />
+          <input
+            v-model="password"
+            :type="show ? 'text' : 'password'"
+            placeholder="••••••••"
+            class="inp"
+            autocomplete="current-password"
+          />
           <button type="button" class="link" @click="show = !show">
-            {{ show ? "Hide" : "Show" }}
+            {{ show ? 'Hide' : 'Show' }}
           </button>
         </div>
         <div class="hint error">123</div>
 
-        <div class="row-between mt12">
+        <div class="row-between mt12 mb-3">
           <label class="check">
             <input type="checkbox" v-model="remember" />
-            <span>Remember me</span>
+            <span>Запомнить меня</span>
           </label>
-          <button type="button" class="link muted">Forgot password?</button>
+          <button type="button" class="link muted">Забыли пароль?</button>
         </div>
 
         <Button variant="primary" :full="true" class="mt12">
-          dsa
+          Авторизация
           <template>123</template>
           <template>123</template>
         </Button>
@@ -61,8 +71,6 @@ const onSubmit = (e: Event) => {
     <div class="toast error" v-if="auth.error !== 'Не авторизован'">⚠ {{ auth.error }}</div>
   </div>
 </template>
-
-
 
 <style scoped>
 .login-wrap {

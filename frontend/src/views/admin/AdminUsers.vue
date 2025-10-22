@@ -33,17 +33,17 @@ const onOpen = () => {
   state.open = true;
 };
 
-async function deleteUser(user: User) {
+async function deleteUser(user: string) {
   state.error = '';
   try {
-    const ok = await store.delete(user.id);
+    const ok = await store.delete(user);
     if (!ok) {
       state.error = store.error ?? 'Не удалось удалить пользователя';
-      console.warn('Delete returned false for user:', user.id, 'store.error=', store.error);
+      console.warn('Delete returned false for user:', user, 'store.error=', store.error);
       setTimeout(() => (state.error = ''), 3000);
       return false;
     }
-    console.log('Пользователь удалён:', user.id);
+    console.log('Пользователь удалён:', user);
     return true;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -114,7 +114,7 @@ async function createUser({ name, phone, password }: UserDTO) {
         </div>
         <div class="right">
           <button class="icon-btn ghost" title="Edit" @click="onEdit(u)">✎</button>
-          <button class="icon-btn danger" title="Delete" @click="deleteUser(u)">🗑</button>
+          <button class="icon-btn danger" title="Delete" @click="deleteUser(u.id)">🗑</button>
         </div>
       </div>
     </Card>

@@ -1,15 +1,8 @@
 // src/types/domain.ts
 
 // Статусы транзакций должны совпадать с Prisma enum
-export const TransactionStatus = {
-  PENDING: 'PENDING',
-  ACCEPTED: 'ACCEPTED',
-  REJECTED: 'REJECTED',
-  COMPLETED: 'COMPLETED',
-  CANCELED: 'CANCELED',
-} as const;
 
-export type TransactionStatus = (typeof TransactionStatus)[keyof typeof TransactionStatus];
+export type TransactionStatus = 'pending' | 'accepted' | 'rejected';
 
 export interface Role {
   id: string;
@@ -59,10 +52,11 @@ export interface Inventory {
   id?: string;
   userId?: string;
   itemId?: string;
-  units?: string;
+  units: number;
   user?: User;
   item?: Item;
-  qty?: number;
+  qty: number;
+  Recipe?: Recipe;
 }
 
 export interface Transaction {
@@ -93,5 +87,172 @@ export interface Paginated<T> {
   page: number;
   pageSize: number;
 }
+
+// =============================
+// 📦 Общие типы
+// =============================
+
+export type UUID = string;
+
+export interface InventoryPreview {
+  inventoryId: UUID;
+  itemId: UUID;
+  sku: string | null;
+  name: string | null;
+  units: number;
+}
+
+export interface MissingComponent {
+  componentId: UUID;
+  componentName?: string; // В PATCH отсутствует
+  perUnit?: number; // Только в POST
+  required: number;
+  available: number;
+  lack: number;
+}
+
+export interface Transaction {
+  id: UUID;
+  fromUserId: UUID;
+  toUserId: UUID;
+  itemId: UUID;
+  units: number;
+  status: TransactionStatus;
+}
+
+// =============================
+// 📨 POST /api/transfer
+// =============================
+
+export interface TransferCreateRequest {
+  userFromId: UUID;
+  userToId: UUID;
+  invItem: string; // может быть inventory.id, itemId, sku или name
+  qty: number;
+}
+
+export type TransferCreateResponse =
+  | TransferCreateResponsePendingReady
+  | TransferCreateResponsePendingCraftable
+  | TransferCreateResponseInsufficientStock
+  | TransferCreateResponseInvalid;
+
+export interface TransferCreateResponsePendingReady {
+  ok: true;
+  status: 'PENDING_READY';
+  message: string;
+  data: {
+    transaction: Transaction;
+    plan: {
+      itemId: UUID;
+      qtyRequested: number;
+      transfer: { direct: number; craft: 0 };
+    };
+  };
+}
+
+export interface TransferCreateResponsePendingCraftable {
+  ok: true;
+  status: 'PENDING_CRAFTABLE';
+  message: string;
+  data: {
+    transaction: Transaction;
+    plan: {
+      itemId: UUID;
+      itemName: string;
+      qtyRequested: number;
+      transfer: { direct: number; craft: number };
+      componentsToConsume: {
+        componentId: UUID;
+        componentName: string;
+        perUnit: number;
+        total: number;
+        available: number;
+      }[];
+    };
+  };
+}
+
+export interface TransferCreateResponseInsufficientStock {
+  ok: false;
+  status: 'INSUFFICIENT_STOCK_AND_NO_RECIPE' | 'INSUFFICIENT_STOCK_AND_COMPONENTS';
+  message: string;
+  details: {
+    itemId: UUID;
+    itemName?: string;
+    qtyRequested?: number;
+    availableReady?: number;
+    needToCraft?: number;
+    missingComponents?: MissingComponent[];
+  };
+}
+
+export interface TransferCreateResponseInvalid {
+  error: string;
+  hint?: string;
+  examples?: InventoryPreview[];
+}
+
+// =============================
+// 🧾 PATCH /api/transfer
+// =============================
+
+export interface TransferUpdateRequest {
+  txId: UUID;
+  action?: 'accept' | 'reject'; // по умолчанию "accept"
+}
+
+export type TransferUpdateResponse =
+  | TransferUpdateResponseAccepted
+  | TransferUpdateResponseRejected
+  | TransferUpdateResponseInsufficient
+  | TransferUpdateResponseRace
+  | TransferUpdateResponseError;
+
+export interface TransferUpdateResponseAccepted {
+  ok: true;
+  status: 'ACCEPTED';
+  message: string;
+  data: {
+    transaction: Transaction;
+    applied: { direct: number; crafted: number };
+  };
+}
+
+export interface TransferUpdateResponseRejected {
+  ok: true;
+  status: 'REJECTED';
+  transaction: Transaction;
+}
+
+export interface TransferUpdateResponseInsufficient {
+  ok: false;
+  status: 'INSUFFICIENT_STOCK_AND_NO_RECIPE' | 'INSUFFICIENT_STOCK_AND_COMPONENTS';
+  message: string;
+  details: {
+    itemId: UUID;
+    qtyRequested?: number;
+    availableReady?: number;
+    needToCraft?: number;
+    missingComponents?: MissingComponent[];
+  };
+}
+
+export interface TransferUpdateResponseRace {
+  ok: false;
+  status: 'INSUFFICIENT_STOCK_AND_COMPONENTS_RACE' | 'INSUFFICIENT_READY_STOCK_RACE';
+  message: string;
+  details?: { componentId?: UUID };
+}
+
+export interface TransferUpdateResponseError {
+  error: string;
+}
+
+// =============================
+// ⚙️ Универсальный Union для работы с fetch
+// =============================
+
+export type TransferApiResponse = TransferCreateResponse | TransferUpdateResponse;
 
 export type Result<T> = { ok: true; data: any } | { ok: false; error: string };

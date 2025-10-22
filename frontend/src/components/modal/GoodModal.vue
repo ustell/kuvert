@@ -315,11 +315,8 @@ function update() {
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
 }
 
-.chips {
-}
 .chip {
   display: grid;
-  grid-template-columns: 255px 115px 30px;
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
@@ -327,9 +324,7 @@ function update() {
   background: #eef2ff;
   border: 1px solid #e0e7ff;
 }
-.chip:not(:last-child) {
-  margin-bottom: 10px;
-}
+
 .chip-name {
   font-weight: 600;
 }

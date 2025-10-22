@@ -6,10 +6,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+
+const model = defineModel<string | null>();
 </script>
 
 <template>
-  <Select>
+  <Select v-model="model">
     <SelectTrigger
       class="w-full border-0 shadow-none ring-0 focus:ring-0 focus-visible:ring-0 focus-visible:border-transparent p-0"
     >

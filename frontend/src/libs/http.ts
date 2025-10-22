@@ -1,4 +1,4 @@
-type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+export type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export type HttpResult<T = any> = {
   ok: boolean;
@@ -7,7 +7,7 @@ export type HttpResult<T = any> = {
   error: string | null;
 };
 
-type OptionsHttp = {
+export type OptionsHttp = {
   headers?: Record<string, string>;
   credentials?: RequestCredentials;
   signal?: AbortSignal;

@@ -13,14 +13,5 @@ export const useInventoryStore = defineStore('inventory', {
     loading: false,
     error: '',
   }),
-  actions: {
-    async getItems(id: string): Promise<boolean> {
-      this.loading = true;
-      try {
-        const res = await http<{ data: Inventory }>('POST', '/api/auth/inventories', { id });
-      } catch (error) {
-        return false;
-      }
-    },
-  },
+  actions: {},
 });

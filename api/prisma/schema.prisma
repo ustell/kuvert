@@ -73,7 +73,6 @@ model Inventory {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, itemId])
   @@index([userId])
   @@index([itemId])
 }
@@ -100,6 +99,7 @@ model Transaction {
   units      Int
   status     TransactionStatus @default(pending)
   createdAt  DateTime          @default(now())
+  meta       Json?              
 
   fromUser User @relation("TxFromUser", fields: [fromUserId], references: [id])
   toUser   User @relation("TxToUser",   fields: [toUserId],   references: [id])

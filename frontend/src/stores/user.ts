@@ -101,6 +101,7 @@ export const useUsers = defineStore('users', {
       this.error = '';
       try {
         const res = await http<{ data: User }>('DELETE', '/api/auth/users', { id });
+        console.log(id);
         if (!res.ok) {
           this.error = res.error ?? 'Не удалось удалить пользователя.';
           console.error('Ошибка в pinia при удалении', res.error);

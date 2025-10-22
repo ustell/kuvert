@@ -10,7 +10,7 @@ export default async function item(req: VercelRequest, res: VercelResponse) {
           include: {
             recipesOf: {
               include: {
-                componentItem: true, // получаем данные компонентов
+                componentItem: true,
               },
             },
           },
