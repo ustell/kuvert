@@ -1,19 +1,51 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, reactive, computed, onMounted, nextTick } from 'vue';
 import Card from '../components/Card.vue';
 import Button from '../components/Button.vue';
 import { useAuth } from '../stores/auth';
 
-const phone = ref('+70000000001');
-const password = ref('123');
+const phone = ref('');
+const password = ref('');
 const remember = ref(true);
 const show = ref(false);
 const auth = useAuth();
 
-const onSubmit = (e: Event) => {
+const passRef = ref<HTMLInputElement | null>(null);
+const telRef = ref<HTMLInputElement | null>(null);
+onMounted(() => telRef.value?.focus());
+
+const state = reactive({ touched: false, localError: '' });
+
+function normalizePhone(raw: string) {
+  const d = (raw || '').replace(/\D+/g, '');
+  if (!d) return '';
+  if (d.startsWith('8') && d.length === 11) return '+7' + d.slice(1);
+  return d.startsWith('+') ? d : '+' + d;
+}
+
+const canSubmit = computed(() => !!phone.value && !!password.value && !auth.loading);
+
+async function onSubmit(e: Event) {
   e.preventDefault();
-  auth.login(phone.value, password.value);
-};
+  state.touched = true;
+  state.localError = '';
+  const norm = normalizePhone(phone.value);
+  const res = await auth.login(norm, password.value, remember.value);
+
+  if (!res?.ok) {
+    state.localError = auth.error || 'Ошибка';
+    if (res.code === 401 || res.code === 403) {
+      password.value = '';
+      await nextTick();
+      passRef.value?.focus();
+    }
+    setTimeout(() => (state.localError = ''), 5000);
+    return;
+  }
+
+  // success → редирект/очистка
+  // router.push({ name: 'dashboard' })
+}
 </script>
 
 <template>
@@ -23,34 +55,36 @@ const onSubmit = (e: Event) => {
     <div class="center">Авторизация</div>
 
     <Card padded>
-      <form @submit="onSubmit">
+      <form @submit="onSubmit" novalidate>
         <label class="label">Телефон</label>
         <div class="field">
           <input
-            v-model.trim="phone"
+            ref="telRef"
+            v-model="phone"
             type="tel"
             inputmode="tel"
-            placeholder="+77000000000"
             class="inp"
+            placeholder="+77000000000"
             autocomplete="tel"
+            name="phone"
           />
         </div>
-        <div class="hint error">123</div>
 
         <label class="label mt12">Пароль</label>
         <div class="field">
           <input
+            ref="passRef"
             v-model="password"
             :type="show ? 'text' : 'password'"
-            placeholder="••••••••"
             class="inp"
+            placeholder="••••••••"
             autocomplete="current-password"
+            name="password"
           />
           <button type="button" class="link" @click="show = !show">
-            {{ show ? 'Hide' : 'Show' }}
+            {{ show ? 'Скрыть' : 'Показать' }}
           </button>
         </div>
-        <div class="hint error">123</div>
 
         <div class="row-between mt12 mb-3">
           <label class="check">
@@ -60,23 +94,31 @@ const onSubmit = (e: Event) => {
           <button type="button" class="link muted">Забыли пароль?</button>
         </div>
 
-        <Button variant="primary" :full="true" class="mt12">
-          Авторизация
-          <template>123</template>
-          <template>123</template>
+        <div v-if="state.localError" class="toast error mb-2">⚠ {{ state.localError }}</div>
+
+        <Button
+          variant="primary"
+          :full="true"
+          class="mt12"
+          :disabled="!canSubmit"
+          :aria-busy="auth.loading"
+        >
+          <span class="btn-content">
+            <span v-if="auth.loading" class="spinner" aria-hidden="true"></span>
+            <span>{{ auth.loading ? 'Входим…' : 'Авторизация' }}</span>
+          </span>
         </Button>
       </form>
     </Card>
-
-    <div class="toast error" v-if="auth.error !== 'Не авторизован'">⚠ {{ auth.error }}</div>
   </div>
 </template>
 
 <style scoped>
 .login-wrap {
   padding-top: 36px;
+  max-width: 420px;
+  margin: 0 auto;
 }
-
 .logo {
   font-size: 28px;
   width: 48px;
@@ -89,31 +131,33 @@ const onSubmit = (e: Event) => {
   border: 1px solid #dbe5ff;
   margin: 0 auto 10px;
 }
-
 .brand {
   text-align: center;
   font-weight: 800;
 }
-
 .center {
   text-align: center;
+  margin-bottom: 10px;
 }
 
-.hint {
-  font-size: 12px;
-  color: var(--muted);
-  margin-top: 6px;
+.label {
+  display: block;
+  font-weight: 600;
+  margin: 8px 0 6px;
 }
-
-.hint.error {
-  color: var(--red);
+.field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fff;
 }
-
 .field.error {
   border-color: #fecaca !important;
   background: #fff1f2 !important;
 }
-
 .inp {
   width: 100%;
   border: none;
@@ -122,7 +166,6 @@ const onSubmit = (e: Event) => {
   font: inherit;
   color: inherit;
 }
-
 .link {
   appearance: none;
   background: transparent;
@@ -131,7 +174,6 @@ const onSubmit = (e: Event) => {
   font-weight: 600;
   cursor: pointer;
 }
-
 .check {
   display: flex;
   gap: 8px;
@@ -139,6 +181,11 @@ const onSubmit = (e: Event) => {
   color: #2a2f3a;
 }
 
+.hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 6px;
+}
 .toast.error {
   margin-top: 12px;
   background: #fff1f2;
@@ -146,5 +193,28 @@ const onSubmit = (e: Event) => {
   color: #991b1b;
   padding: 10px 12px;
   border-radius: 12px;
+}
+.toast.error ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.btn-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  border-top-color: #fff;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

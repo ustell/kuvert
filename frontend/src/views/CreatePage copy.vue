@@ -296,7 +296,7 @@ async function applySuggestion(row: InventoryWithQty, notice: NoticeInsufficient
   <div class="container">
     <div class="page-head">
       <div class="title-18">Создать передачу</div>
-      <div class="muted">Transfer goods between users</div>
+      <div class="">Transfer goods between users</div>
     </div>
 
     <Card padded>
@@ -382,7 +382,6 @@ async function applySuggestion(row: InventoryWithQty, notice: NoticeInsufficient
                   </span>
                 </div>
 
-                <!-- craftable details -->
                 <template v-if="itemNotices[value.item?.id ?? value.itemId!].kind === 'craftable'">
                   <div class="mt-1 text-[13px] text-gray-700">
                     К передаче:
@@ -439,7 +438,6 @@ async function applySuggestion(row: InventoryWithQty, notice: NoticeInsufficient
                   </div>
                 </template>
 
-                <!-- READY details -->
                 <template v-if="itemNotices[value.item?.id ?? value.itemId!]?.kind === 'ready'">
                   <div class="mt-2 flex items-center gap-2">
                     <button
@@ -464,23 +462,20 @@ async function applySuggestion(row: InventoryWithQty, notice: NoticeInsufficient
                   </div>
                 </template>
 
-                <!-- INSUFFICIENT -->
                 <template
                   v-if="itemNotices[value.item?.id ?? value.itemId!]?.kind === 'insufficient'"
                 >
-                  <!-- создаём локальный алиас n = itemNotices[key] -->
                   <template
                     v-for="n in [itemNotices[value.item?.id ?? value.itemId!] as any]"
                     :key="'ins-' + (value.item?.id ?? value.itemId)"
                   >
                     <div class="mt-1 text-[13px] text-gray-700">
-                      <!-- 1) Есть детальная разбивка по компонентам -->
                       <template v-if="n.details?.missingComponents?.length">
                         <div class="mb-1">Не хватает компонентов:</div>
                         <ul class="list-disc pl-5">
                           <li v-for="m in n.details.missingComponents" :key="m.componentId">
                             {{ m.componentName }}
-                            <!-- показываем формулу perUnit × needToCraft, если есть данные -->
+
                             <template v-if="m.perUnit && (n.details.needToCraft ?? 0) > 0">
                               — {{ m.perUnit }} × {{ n.details.needToCraft }} =
                               <b>{{ m.required }}</b>
@@ -493,7 +488,6 @@ async function applySuggestion(row: InventoryWithQty, notice: NoticeInsufficient
                           </li>
                         </ul>
 
-                        <!-- агрегаты, чтобы было как на жёлтом кейсе -->
                         <div class="mt-2 text-[13px] text-gray-600">
                           К передаче: <b>{{ n.details.qtyRequested ?? value.qty }}</b> шт.
                           <span class="text-gray-500">
@@ -503,7 +497,6 @@ async function applySuggestion(row: InventoryWithQty, notice: NoticeInsufficient
                         </div>
                       </template>
 
-                      <!-- 2) Детализации нет — фолбэк -->
                       <template v-else>
                         <div class="mb-1">Детализация по компонентам недоступна.</div>
                         <ul class="list-disc pl-5">
@@ -531,7 +524,6 @@ async function applySuggestion(row: InventoryWithQty, notice: NoticeInsufficient
                       </template>
                     </div>
 
-                    <!-- совет по уменьшению количества -->
                     <div v-if="n.suggestedQty" class="mt-2 flex items-center gap-2">
                       <span class="text-[13px] text-gray-700">
                         Совет: уменьшите количество до <b>{{ n.suggestedQty }}</b>
@@ -580,7 +572,6 @@ async function applySuggestion(row: InventoryWithQty, notice: NoticeInsufficient
                       </ul>
                     </template>
 
-                    <!-- если вообще нет рецепта — покажем явную причину -->
                     <template v-else>
                       <div class="text-[13px]">
                         Для крафта нет рецепта или система не прислала детализацию.
@@ -588,7 +579,6 @@ async function applySuggestion(row: InventoryWithQty, notice: NoticeInsufficient
                     </template>
                   </div>
 
-                  <!-- совет по уменьшению количества -->
                   <div
                     v-if="itemNotices[value.item?.id ?? value.itemId!].suggestedQty"
                     class="mt-2 flex items-center gap-2"
@@ -658,156 +648,40 @@ async function applySuggestion(row: InventoryWithQty, notice: NoticeInsufficient
   </div>
 </template>
 
-<!-- # 1) Успех: передаю **2 телефона** (готового хватает, крафт не нужен)
-
-**Запрос**
-
-{
-  "userFromId": "11111111-1111-1111-1111-111111111111",
-  "userToId":   "22222222-2222-2222-2222-222222222222",
-  "invItem":    "PHONE-001", 
-  "qty":        2
-}
-
-**Ожидаемый ответ (201)**
-
-{
-  "ok": true,
-  "status": "PENDING_READY",
-  "message": "Транзакция создана (крафт не требуется)",
-  "data": {
-    "transaction": {
-      "id": "55555555-5555-5555-5555-555555555555",
-      "fromUserId": "11111111-1111-1111-1111-111111111111",
-      "toUserId": "22222222-2222-2222-2222-222222222222",
-      "itemId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-      "units": 2,
-      "status": "pending"
-    },
-    "plan": {
-      "itemId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-      "qtyRequested": 2,
-      "transfer": { "direct": 2, "craft": 0 }
-    }
-  }
-}
-
-
-Контекст примера: у отправителя есть **2 готовых телефона** → всё уходит «как есть».
-
----
-# 2) Крафт возможен: передаю **5 телефонов** (готово 2, докрафт 3 — комплектующие есть)
-
-**Запрос**
-{
-  "userFromId": "11111111-1111-1111-1111-111111111111",
-  "userToId":   "22222222-2222-2222-2222-222222222222",
-  "invItem":    "PHONE-001",
-  "qty":        5
-}
-
-
-**Ожидаемый ответ (201)**
-{
-  "ok": true,
-  "status": "PENDING_CRAFTABLE",
-  "message": "Транзакция создана (требуется крафт, но комплектующие есть)",
-  "data": {
-    "transaction": {
-      "id": "66666666-6666-6666-6666-666666666666",
-      "fromUserId": "11111111-1111-1111-1111-111111111111",
-      "toUserId": "22222222-2222-2222-2222-222222222222",
-      "itemId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-      "units": 5,
-      "status": "pending"
-    },
-    "plan": {
-      "itemId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-      "itemName": "Phone",
-      "qtyRequested": 5,
-      "transfer": { "direct": 2, "craft": 3 },
-      "componentsToConsume": [
-        {
-          "componentId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
-          "componentName": "Screen",
-          "perUnit": 1,
-          "total": 3,
-          "available": 10
-        },
-        {
-          "componentId": "cccccccc-cccc-cccc-cccc-cccccccccccc",
-          "componentName": "Battery",
-          "perUnit": 1,
-          "total": 3,
-          "available": 5
-        },
-        {
-          "componentId": "dddddddd-dddd-dddd-dddd-dddddddddddd",
-          "componentName": "Main Board",
-          "perUnit": 1,
-          "total": 3,
-          "available": 4
-        }
-      ]
-    }
-  }
-}
-
-
-Контекст примера: у отправителя **готово 2** телефона; рецепт телефона: `Screen x1`, `Battery x1`, `Main Board x1`. Для докрафта **3** ед. всё есть → создаётся pending-транзакция с планом списания компонентов при подтверждении.
-
----
-
-# 3) Недостаточно и готового, и компонентов: передаю **7 телефонов** (готово 2, нужно докрафтить 5 — комплектующих не хватает)
-
-**Запрос**
-{
-  "userFromId": "11111111-1111-1111-1111-111111111111",
-  "userToId":   "22222222-2222-2222-2222-222222222222",
-  "invItem":    "PHONE-001",
-  "qty":        7
-}
-
-**Ожидаемый ответ (409)**
-
-{
-  "ok": false,
-  "status": "INSUFFICIENT_STOCK_AND_COMPONENTS",
-  "message": "Не достаточно товара, и не достаточно комплектующих для его крафта",
-  "details": {
-    "itemId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-    "itemName": "Phone",
-    "qtyRequested": 7,
-    "availableReady": 2,
-    "needToCraft": 5,
-    "missingComponents": [
-      {
-        "componentId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
-        "componentName": "Screen",
-        "perUnit": 1,
-        "required": 5,
-        "available": 3,
-        "lack": 2
-      },
-      {
-        "componentId": "cccccccc-cccc-cccc-cccc-cccccccccccc",
-        "componentName": "Battery",
-        "perUnit": 1,
-        "required": 5,
-        "available": 2,
-        "lack": 3
-      },
-      {
-        "componentId": "dddddddd-dddd-dddd-dddd-dddddddddddd",
-        "componentName": "Main Board",
-        "perUnit": 1,
-        "required": 5,
-        "available": 4,
-        "lack": 1
-      }
-    ]
-  }
-}
-
-
-> Контекст примера: готово **2**, нужно докрафтить **5**, но по ряду компонентов нехватка — API возвращает 409 с детальным списком дефицитов. -->
+**Запрос** { "userFromId": "11111111-1111-1111-1111-111111111111", "userToId":
+"22222222-2222-2222-2222-222222222222", "invItem": "PHONE-001", "qty": 2 } **Ожидаемый ответ (201)**
+{ "ok": true, "status": "PENDING_READY", "message": "Транзакция создана (крафт не требуется)",
+"data": { "transaction": { "id": "55555555-5555-5555-5555-555555555555", "fromUserId":
+"11111111-1111-1111-1111-111111111111", "toUserId": "22222222-2222-2222-2222-222222222222",
+"itemId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "units": 2, "status": "pending" }, "plan": {
+"itemId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "qtyRequested": 2, "transfer": { "direct": 2,
+"craft": 0 } } } } Контекст примера: у отправителя есть **2 готовых телефона** → всё уходит «как
+есть». --- # 2) Крафт возможен: передаю **5 телефонов** (готово 2, докрафт 3 — комплектующие есть)
+**Запрос** { "userFromId": "11111111-1111-1111-1111-111111111111", "userToId":
+"22222222-2222-2222-2222-222222222222", "invItem": "PHONE-001", "qty": 5 } **Ожидаемый ответ (201)**
+{ "ok": true, "status": "PENDING_CRAFTABLE", "message": "Транзакция создана (требуется крафт, но
+комплектующие есть)", "data": { "transaction": { "id": "66666666-6666-6666-6666-666666666666",
+"fromUserId": "11111111-1111-1111-1111-111111111111", "toUserId":
+"22222222-2222-2222-2222-222222222222", "itemId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "units":
+5, "status": "pending" }, "plan": { "itemId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "itemName":
+"Phone", "qtyRequested": 5, "transfer": { "direct": 2, "craft": 3 }, "componentsToConsume": [ {
+"componentId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", "componentName": "Screen", "perUnit": 1,
+"total": 3, "available": 10 }, { "componentId": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+"componentName": "Battery", "perUnit": 1, "total": 3, "available": 5 }, { "componentId":
+"dddddddd-dddd-dddd-dddd-dddddddddddd", "componentName": "Main Board", "perUnit": 1, "total": 3,
+"available": 4 } ] } } } Контекст примера: у отправителя **готово 2** телефона; рецепт телефона:
+`Screen x1`, `Battery x1`, `Main Board x1`. Для докрафта **3** ед. всё есть → создаётся
+pending-транзакция с планом списания компонентов при подтверждении. --- # 3) Недостаточно и
+готового, и компонентов: передаю **7 телефонов** (готово 2, нужно докрафтить 5 — комплектующих не
+хватает) **Запрос** { "userFromId": "11111111-1111-1111-1111-111111111111", "userToId":
+"22222222-2222-2222-2222-222222222222", "invItem": "PHONE-001", "qty": 7 } **Ожидаемый ответ (409)**
+{ "ok": false, "status": "INSUFFICIENT_STOCK_AND_COMPONENTS", "message": "Не достаточно товара, и не
+достаточно комплектующих для его крафта", "details": { "itemId":
+"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "itemName": "Phone", "qtyRequested": 7, "availableReady": 2,
+"needToCraft": 5, "missingComponents": [ { "componentId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+"componentName": "Screen", "perUnit": 1, "required": 5, "available": 3, "lack": 2 }, {
+"componentId": "cccccccc-cccc-cccc-cccc-cccccccccccc", "componentName": "Battery", "perUnit": 1,
+"required": 5, "available": 2, "lack": 3 }, { "componentId": "dddddddd-dddd-dddd-dddd-dddddddddddd",
+"componentName": "Main Board", "perUnit": 1, "required": 5, "available": 4, "lack": 1 } ] } } >
+Контекст примера: готово **2**, нужно докрафтить **5**, но по ряду компонентов нехватка — API
+возвращает 409 с детальным списком дефицитов. -->

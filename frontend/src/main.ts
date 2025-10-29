@@ -1,21 +1,35 @@
-import router from './routers/index';
 import { createApp } from 'vue';
-import App from './App.vue';
 import { createPinia } from 'pinia';
-
+import router from './routers';
+import App from './App.vue';
 import { boot } from './services/boot';
-const pinia = createPinia();
+import { setBootReady } from './services/bootGate';
 
 const app = createApp(App);
-app.use(router);
+const pinia = createPinia();
 app.use(pinia);
+app.use(router);
+
+// прячем прелоадер
+function hideBootOverlay() {
+  const el = document.getElementById('boot');
+  if (!el) return;
+  el.classList.add('is-hidden');
+  const remove = () => el.remove();
+  el.addEventListener('transitionend', remove, { once: true });
+  window.setTimeout(remove, 800);
+}
+
+const bootPromise = (async () => {
+  const { ok, errors } = await boot();
+  if (!ok) console.warn('Boot warnings:', errors);
+})();
+
+setBootReady(bootPromise);
 
 try {
-  const { ok, errors } = await boot();
-  if (!ok) console.error('Boot warnings:', errors);
-} catch (e) {
-  console.error('Boot failed:', e);
+  await bootPromise;
 } finally {
   app.mount('#app');
-  document.getElementById('boot-loader')?.remove();
+  hideBootOverlay();
 }

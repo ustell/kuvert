@@ -1,51 +1,50 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
-import Button from '../components/Button.vue';
-import AdminUsers from './admin/AdminUsers.vue';
-import AdminGoods from './admin/AdminGoods.vue';
-import { useItem } from '../stores/item';
-import AdminTransfer from './admin/AdminTransfer.vue';
+import { ref, defineAsyncComponent } from 'vue';
 
 const tab = ref<'users' | 'goods' | 'transfer'>('users');
-const showAddGood = ref<boolean>(false);
-const items = useItem();
 
-const saved = async (payload: { sku: string; name: string }) => {
-  console.log('saved');
-  const ok = await items.createItem(payload.sku, payload.name);
-  if (!ok) {
-    console.log('Ошибка при создании');
-  } else {
-    console.log('Товар успешно создан');
-  }
-  console.log('Статуст ответа', ok);
-};
+const AdminUsers = defineAsyncComponent({
+  loader: () => import('./admin/AdminUsers.vue'),
+  timeout: 0,
+});
+const AdminGoods = defineAsyncComponent({
+  loader: () => import('./admin/AdminGoods.vue'),
+  timeout: 0,
+});
+const AdminTransfer = defineAsyncComponent({
+  loader: () => import('./admin/AdminTransfer.vue'),
+  timeout: 0,
+});
 </script>
 
 <template>
   <div class="container">
     <div class="page-head">
-      <div class="title-18">Admin Settings</div>
-      <div class="muted">Manage users and goods</div>
+      <div class="title-18">Настрокйи администратора</div>
+      <div class="">Управляйте пользователями и товарами</div>
     </div>
 
-    <!-- Tabs -->
     <div class="tabs">
-      <button class="tab" :class="{ active: tab === 'users' }" @click="tab = 'users'">
-        👥 Users
-      </button>
-      <button class="tab" :class="{ active: tab === 'goods' }" @click="tab = 'goods'">
-        📦 Goods
-      </button>
+      <button class="tab" :class="{ active: tab === 'users' }" @click="tab = 'users'">👥</button>
+      <button class="tab" :class="{ active: tab === 'goods' }" @click="tab = 'goods'">📦</button>
       <button class="tab" :class="{ active: tab === 'transfer' }" @click="tab = 'transfer'">
-        📦 transfer
+        🔁
       </button>
     </div>
 
-    <component
-      :is="tab === 'users' ? AdminUsers : tab === 'goods' ? AdminGoods : AdminTransfer"
-      class="mt12"
-    />
+    <Suspense>
+      <template #default>
+        <component
+          :is="tab === 'users' ? AdminUsers : tab === 'goods' ? AdminGoods : AdminTransfer"
+          class="mt12"
+        />
+      </template>
+      <template #fallback>
+        <div class="space-y-2 mt12">
+          <div v-for="i in 6" :key="i" class="h-14 animate-pulse rounded-md bg-gray-100" />
+        </div>
+      </template>
+    </Suspense>
   </div>
 </template>
 
@@ -59,7 +58,6 @@ const saved = async (payload: { sku: string; name: string }) => {
   border-radius: 999px;
   margin-top: 12px;
 }
-
 .tab {
   flex: 1;
   appearance: none;
@@ -71,10 +69,30 @@ const saved = async (payload: { sku: string; name: string }) => {
   color: #2a2f3a;
   cursor: pointer;
 }
-
 .tab.active {
   background: #fff;
   border: 1px solid var(--line);
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02);
+}
+.mt12 {
+  margin-top: 12px;
+}
+.space-y-2 > * + * {
+  margin-top: 0.5rem;
+}
+.h-14 {
+  height: 3.5rem;
+}
+.animate-pulse {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.65;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 </style>

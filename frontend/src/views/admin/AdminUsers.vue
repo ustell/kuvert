@@ -1,190 +1,157 @@
 <script setup lang="ts">
-import Card from '../../components/Card.vue';
-import Badge from '../../components/Badge.vue';
-import { useUsers } from '../../stores/user';
 import { onMounted, reactive, ref } from 'vue';
+
+import RowCard from '../../components/RowCard.vue';
+import IconBtn from '../../components/IconBtn.vue';
 import Button from '../../components/Button.vue';
 import UserModal from '../../components/modal/UserModal.vue';
-import type { Result, User } from '../../types/domain';
+import GiveGoodsModal from '../../components/modal/GiveGoodsModal.vue';
+import EmptyState from '../../components/common/EmptyState.vue';
+
+import { useUsers } from '../../stores/user';
 import { useAuth } from '../../stores/auth';
+import { useTrans } from '../../stores/transfer';
+import { useItem } from '../../stores';
+import { useAction } from '../../composables/useAction';
+import { useBusySet } from '../../composables/useBusySet';
+
+import type { User } from '../../types/domain';
 import type { UserDTO } from '../../types/DTO';
+import http from '../../libs/http';
 
-const store = useUsers();
-onMounted(() => {
-  store.getUser();
+type Role = { id: string; name: string };
+
+const usersStore = useUsers();
+const auth = useAuth();
+const trans = useTrans();
+const item = useItem();
+const { act } = useAction();
+const busy = useBusySet();
+const roles = ref<Role[]>([]);
+
+const state = reactive({
+  openUserModal: false,
+  editUser: null as User | null,
+  openGive: false,
+  giveToUser: null as User | null,
 });
 
-const state = reactive<{
-  error: string;
-  open: boolean;
-  currentUser: User | null;
-}>({
-  error: '',
-  open: false,
-  currentUser: null,
+onMounted(async () => {
+  try {
+    usersStore.getUser?.();
+    if (!auth.users) await auth.me();
+    if (!item.items) await item.fetchItems();
+    const res = await http<Role[]>('GET', '/api/auth/roles');
+    if (res.ok) roles.value = res.data;
+  } catch (e) {
+    console.error(e);
+  }
 });
 
-const onEdit = (user: User) => {
-  state.currentUser = user;
-  state.open = true;
+const onOpenCreate = () => {
+  state.editUser = null;
+  state.openUserModal = true;
 };
-const onOpen = () => {
-  state.currentUser = null;
-  state.open = true;
+const onOpenEdit = (u: User) => {
+  state.editUser = u;
+  state.openUserModal = true;
 };
 
-async function deleteUser(user: string) {
-  state.error = '';
-  try {
-    const ok = await store.delete(user);
-    if (!ok) {
-      state.error = store.error ?? 'Не удалось удалить пользователя';
-      console.warn('Delete returned false for user:', user, 'store.error=', store.error);
-      setTimeout(() => (state.error = ''), 3000);
-      return false;
-    }
-    console.log('Пользователь удалён:', user);
-    return true;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    state.error = msg || 'Ошибка при удалении пользователя';
-    console.error('deleteUser error:', msg);
-    setTimeout(() => (state.error = ''), 3000);
-    return false;
-  }
+async function deleteUser(id: string) {
+  await busy.wrap(id, () =>
+    act(() => usersStore.delete(id), {
+      messages: {
+        success: 'Пользователь удалён',
+        error: usersStore.error ?? 'Не удалось удалить пользователя',
+      },
+      ok: (r: any) => r === true,
+    }),
+  );
 }
-async function updateUser({ name, phone, password, id }: UserDTO) {
-  state.error = '';
-  try {
-    const ok = await store.update({ name, phone, password, id });
-    if (!ok) {
-      state.error = store.error ?? 'Не удалось создать пользователя';
-      console.warn('Update returned false for user:', name, 'store.error=', store.error);
-      setTimeout(() => (state.error = ''), 3000);
-      return false;
-    }
-    console.log('Пользователь создан:', name);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    state.error = msg || 'Ошибка при удалении пользователя';
-    console.error('deleteUser error:', msg);
-    setTimeout(() => (state.error = ''), 3000);
-    return false;
-  }
+async function updateUser(p: UserDTO) {
+  await act(() => usersStore.update(p, true), {
+    messages: {
+      success: 'Пользователь обновлён',
+      error: usersStore.error ?? 'Не удалось обновить пользователя',
+    },
+    ok: (r: any) => r === true,
+  });
+  state.openUserModal = false;
+  state.editUser = null;
 }
-async function createUser({ name, phone, password }: UserDTO) {
-  state.error = '';
-  try {
-    const ok = await store.create({ name, phone, password }, true);
-    if (!ok) {
-      state.error = store.error ?? 'Не удалось создать пользователя';
-      console.warn('Create returned false for user:', name, 'store.error=', store.error);
-      setTimeout(() => (state.error = ''), 3000);
-      return false;
-    }
-    console.log('Пользователь создан:', name);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    state.error = msg || 'Ошибка при удалении пользователя';
-    console.error('deleteUser error:', msg);
-    setTimeout(() => (state.error = ''), 3000);
-    return false;
+async function createUser(p: UserDTO) {
+  await act(() => usersStore.create(p, true), {
+    messages: {
+      success: 'Пользователь создан',
+      error: usersStore.error ?? 'Не удалось создать пользователя',
+    },
+    ok: (r: any) => r === true,
+  });
+  state.openUserModal = false;
+}
+
+function openGive(u: User) {
+  state.giveToUser = u;
+  state.openGive = true;
+}
+async function onConfirmGive(payload: { items: Array<{ itemId: string; qty: number }> }) {
+  const fromId = String(auth.users?.id ?? '');
+  const toId = String(state.giveToUser?.id ?? '');
+  const res = await act(() => trans.create(fromId, toId, payload.items, null, { force: true }), {
+    messages: {
+      success: 'Передача создана',
+      error: trans.error ?? 'Не удалось выполнить передачу',
+    },
+    ok: (x: any) => !!x?.ok,
+  });
+  if ((res as any)?.ok) {
+    state.openGive = false;
+    state.giveToUser = null;
   }
 }
 </script>
 
 <template>
   <div>
-    <p v-if="state.error.length > 1">{{ state.error }}</p>
-    <Button variant="primary" :full="true" class="mt12" @click="onOpen">
-      ＋ Добавить нового пользователя
-    </Button>
-
-    <Card class="user-card" v-for="u in store.users" padded>
-      <div class="user-row">
-        <div class="left">
-          <div class="avatar">👤</div>
-          <div>
-            <div class="name">
-              {{ u.name }}
-              <Badge kind="muted">{{ u.roleId?.toString().slice(9, 10) }}</Badge>
-            </div>
-            <div class="muted">📞 Phone {{ u.phone }}</div>
-          </div>
-        </div>
-        <div class="right">
-          <button class="icon-btn ghost" title="Edit" @click="onEdit(u)">✎</button>
-          <button class="icon-btn danger" title="Delete" @click="deleteUser(u.id)">🗑</button>
-        </div>
-      </div>
-    </Card>
+    <Button variant="primary" :full="true" class="mt12" @click="onOpenCreate"
+      >＋ Добавить нового пользователя</Button
+    >
+    <EmptyState v-if="!usersStore.users?.length" text="Пользователей пока нет" />
+    <RowCard
+      v-for="u in usersStore.users"
+      :key="u.id"
+      :title="u.name"
+      :subtitle="u.phone ? `📞 ${u.phone}` : '—'"
+      :badge="{ text: u.role?.name ?? '—' }"
+    >
+      <template #avatar>👤</template>
+      <template #actions>
+        <IconBtn title="Выдать товары" @click="openGive(u)">📦</IconBtn>
+        <IconBtn title="Редактировать" @click="onOpenEdit(u)">✎</IconBtn>
+        <IconBtn
+          :disabled="busy.has(u.id)"
+          variant="danger"
+          title="Удалить"
+          @click="deleteUser(u.id)"
+        >
+          <template v-if="busy.has(u.id)">⏳</template><template v-else>🗑</template>
+        </IconBtn>
+      </template>
+    </RowCard>
   </div>
 
   <UserModal
-    v-model="state.open"
+    v-model="state.openUserModal"
     title="Пользователь"
-    :current-user="state.currentUser"
+    :current-user="state.editUser"
+    :roles="roles"
     @create="createUser"
     @update="updateUser"
   />
+  <GiveGoodsModal
+    v-model="state.openGive"
+    :to-user="state.giveToUser"
+    :items="item.items"
+    @confirm="onConfirmGive"
+  />
 </template>
-
-<style scoped>
-.user-card {
-  padding: 12px;
-}
-
-.user-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.left {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-.avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
-  background: #f5f7ff;
-  border: 1px solid var(--line);
-}
-
-.name {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  font-weight: 700;
-}
-
-.right {
-  display: flex;
-  gap: 8px;
-}
-
-.icon-btn {
-  appearance: none;
-  border: 1px solid var(--line);
-  background: #fff;
-  border-radius: 10px;
-  padding: 8px 10px;
-  cursor: pointer;
-}
-
-.icon-btn.ghost {
-  background: #fff;
-}
-
-.icon-btn.danger {
-  background: #fff5f5;
-  border-color: #ffd7d7;
-  color: #c02626;
-}
-</style>

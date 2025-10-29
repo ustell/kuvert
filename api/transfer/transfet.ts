@@ -47,7 +47,38 @@ export default async function transfer(req: VercelRequest, res: VercelResponse) 
   switch (req.method) {
     case 'GET': {
       try {
+        const url = new URL(req.url ?? '', 'http://localhost'); // базовый URL для парсинга
+        const limit = Math.max(1, Math.min(100, Number(url.searchParams.get('limit')) || 10));
+        const offset = Math.max(0, Number(url.searchParams.get('offset')) || 0);
+        const q = (url.searchParams.get('q') || '').trim();
+        const statusRaw = (url.searchParams.get('status') || 'all').toLowerCase();
+        const statusFilter =
+          statusRaw === 'all'
+            ? undefined
+            : (normalizeStatus(statusRaw) as Prisma.TransactionWhereInput['status']);
+
+        // where для Prisma
+        const where: Prisma.TransactionWhereInput = {};
+        if (statusFilter) where.status = statusFilter;
+
+        if (q) {
+          // простой серверный поиск по нескольким полям (case-insensitive)
+          where.OR = [
+            { id: { contains: q, mode: 'insensitive' } },
+            { status: { equals: normalizeStatus(q) as any } },
+            { item: { name: { contains: q, mode: 'insensitive' } } },
+            { item: { sku: { contains: q, mode: 'insensitive' } } },
+            { fromUser: { name: { contains: q, mode: 'insensitive' } } },
+            { toUser: { name: { contains: q, mode: 'insensitive' } } },
+            { fromUserId: { contains: q, mode: 'insensitive' } },
+            { toUserId: { contains: q, mode: 'insensitive' } },
+          ];
+        }
+
+        const total = await prisma.transaction.count({ where });
+
         const data = await prisma.transaction.findMany({
+          where,
           select: {
             id: true,
             fromUserId: true,
@@ -56,16 +87,21 @@ export default async function transfer(req: VercelRequest, res: VercelResponse) 
             units: true,
             status: true,
             createdAt: true,
-            meta: true,
             item: { select: { id: true, name: true, sku: true } },
             fromUser: true,
             toUser: true,
           },
+          orderBy: { createdAt: 'desc' },
+          skip: offset,
+          take: limit,
         });
 
-        return res.status(200).json({ data });
-      } catch (error) {
-        console.log(`GET /api/transfer/transfer failed: ${error.message}`);
+        const nextOffset = offset + data.length;
+        const hasMore = nextOffset < total;
+
+        return res.status(200).json({ data, total, nextOffset, hasMore });
+      } catch (error: any) {
+        console.log(`GET /api/transfer failed: ${error.message}`);
         return res.status(500).json({ error: 'Internal Server Error' });
       }
     }
@@ -77,11 +113,13 @@ export default async function transfer(req: VercelRequest, res: VercelResponse) 
           userToId,
           itemToTransfer,
           allowPartial = false, // optional
+          force = false,
         }: {
           userFromId: string;
           userToId: string;
           itemToTransfer: { itemId: string; qty: number }[];
           allowPartial?: boolean;
+          force?: boolean;
         } = req.body ?? {};
 
         if (
@@ -93,6 +131,60 @@ export default async function transfer(req: VercelRequest, res: VercelResponse) 
           return res.status(400).json({
             error: 'userFromId, userToId и itemToTransfer (не пустой массив) обязательны',
           });
+        }
+
+        if (force) {
+          // базовая валидация массива
+          const cleaned = itemToTransfer
+            .map((x) => ({ itemId: String(x.itemId), qty: Number(x.qty) }))
+            .filter((x) => x.itemId && Number.isFinite(x.qty) && x.qty > 0);
+
+          if (cleaned.length === 0) {
+            return res.status(400).json({ error: 'Пустой список itemToTransfer' });
+          }
+
+          const created: any[] = [];
+
+          const txResult = await prisma.$transaction(
+            async (tx) => {
+              for (const { itemId, qty } of cleaned) {
+                // гарантируем строку инвентаря отправителя и уменьшаем (можно уйти в минус)
+                await tx.inventory.upsert({
+                  where: { userId_itemId: { userId: userFromId, itemId } },
+                  update: { units: { decrement: qty } },
+                  create: { userId: userFromId, itemId, units: -qty },
+                });
+
+                const row = await tx.transaction.create({
+                  data: {
+                    fromUserId: userFromId,
+                    toUserId: userToId,
+                    itemId,
+                    units: qty,
+                    status: TransactionStatus.pending, // как и раньше
+                  },
+                  select: {
+                    id: true,
+                    fromUserId: true,
+                    toUserId: true,
+                    itemId: true,
+                    units: true,
+                    status: true,
+                    createdAt: true,
+                    item: { select: { id: true, name: true, sku: true } },
+                    fromUser: true,
+                    toUser: true,
+                  },
+                });
+
+                created.push(row);
+              }
+              return created;
+            },
+            { maxWait: 20000, timeout: 120000 },
+          );
+
+          return res.status(200).json({ ok: true, data: txResult, mode: 'FORCE' });
         }
 
         // Проверка существования пользователей (быстрая)
@@ -353,11 +445,6 @@ export default async function transfer(req: VercelRequest, res: VercelResponse) 
                   itemId: plan.itemId,
                   units: plan.transferQty,
                   status: TransactionStatus.pending,
-                  meta: {
-                    requestedQty: plan.requestedQty,
-                    direct: plan.direct,
-                    needToCraft: plan.needToCraft,
-                  } as Prisma.InputJsonValue,
                 },
               });
               created.push({ plan, data: txRow });
@@ -392,56 +479,6 @@ export default async function transfer(req: VercelRequest, res: VercelResponse) 
       }
     }
 
-    // case 'POST': {
-    //   const { userTo, userFrom, item, qty } = req.body ?? {};
-    //   try {
-    //     const [userFrome, userToe] = await Promise.all([
-    //       prisma.user.findFirst({ where: { name: userTo } }),
-    //       prisma.user.findFirst({ where: { name: userFrom } }),
-    //     ]);
-
-    //     async function getInventoryMap(
-    //       itemId: string,
-    //       userId: string,
-    //     ): Promise<Map<string, { id: string; units: number }>> {
-    //       const arr = await prisma.inventory.findMany({
-    //         where: {
-    //           userId,
-    //           itemId,
-    //         },
-    //       });
-    //       const map = new Map(arr.map((i) => [i.itemId, { id: i.id, units: i.units }]));
-    //       console.log(item);
-    //       console.log('map', map.get(item));
-    //       return map;
-    //     }
-
-    //     async function getResipces(itemId, requestedQty) {
-    //       const arr = await prisma.recipe.findMany({
-    //         where: {
-    //           itemId,
-    //         },
-    //       });
-    //       const needed = arr.map((i) => ({
-    //         compId: i.componentItemId,
-    //         perOne: i.qty,
-    //         needed: requestedQty * i.qty,
-    //       }));
-    //       console.log('NEEDED', needed);
-    //       return needed;
-    //     }
-
-    //     function assessCraftability(map, needed) {
-    //       for (const comp of needed) {
-    //         const have = map.get(comp.compId)?.units;
-    //         if (have < comp.needed) {
-    //           100 < 10;
-    //         }
-    //       }
-    //     }
-    //   } catch (error) {}
-    // }
-
     case 'PATCH': {
       try {
         const { transferId, userId } = req.body ?? {};
@@ -472,9 +509,12 @@ export default async function transfer(req: VercelRequest, res: VercelResponse) 
               units: transfer.units,
             },
           });
-          await prisma.transaction.delete({
+          await prisma.transaction.update({
             where: {
               id: transfer.id,
+            },
+            data: {
+              status: 'accepted',
             },
           });
         });
@@ -517,9 +557,12 @@ export default async function transfer(req: VercelRequest, res: VercelResponse) 
               units: trans.units,
             },
           });
-          await tx.transaction.delete({
+          await tx.transaction.update({
             where: {
               id: trans.id,
+            },
+            data: {
+              status: 'rejected',
             },
           });
         });

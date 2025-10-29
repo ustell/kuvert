@@ -1,68 +1,112 @@
 <script setup lang="ts">
+import { computed } from 'vue';
+import { storeToRefs } from 'pinia';
 import Card from '../components/Card.vue';
 import Badge from '../components/Badge.vue';
 import ListItem from '../components/ListItem.vue';
-import { storeToRefs } from 'pinia';
+
 import { useAuth } from '../stores/auth';
-import { computed } from 'vue';
+import { useTrans } from '../stores/transfer';
+import type { Inventory, Transaction } from '../types/domain';
+import { useFormat } from '../composables/useFormat';
+import { useRouter } from 'vue-router';
 
+const fmt = useFormat('ru-RU');
+const router = useRouter();
 const auth = useAuth();
-const { users } = storeToRefs(auth);
+const trans = useTrans();
+const { users: me } = storeToRefs(auth);
+const { transfer, loading } = storeToRefs(trans);
 
-const inventories = computed(() => users.value?.inventories ?? []);
+const inventories = computed<Inventory[]>(() => me.value?.inventories ?? []);
+const incoming = computed<Transaction[]>(() =>
+  (transfer.value ?? []).filter((t) => String(t.toUserId ?? t.toUser?.id) === String(me.value?.id)),
+);
+
+const inventoryCount = computed(() => inventories.value.length);
+const pendingIncomingCount = computed(
+  () => incoming.value.filter((t) => t.status === 'pending').length,
+);
+
+const onLogout = async () => {
+  await auth.logout(); // или auth.logout(true) если бэк-logout не добавляешь
+  router.replace('/login'); // адаптируй под свой маршрут
+};
 </script>
 
 <template>
-  <div class="container">
-    <div class="welcome">
-      <div class="muted">
-        Добро пожаловать, <b>{{ users?.name }}</b>
+  <div class="container space-y-6">
+    <div class="welcome flex justify-between">
+      <div>
+        Добро пожаловать, <b>{{ me?.name ?? 'пользователь' }}</b>
       </div>
-      <div class="title">Production Tracking Dashboard</div>
+      <button class="link-btn" @click="onLogout">Выйти</button>
     </div>
 
-    <div class="grid-2">
+    <div class="grid-2 gap-4">
       <Card padded>
         <div class="stat">
           <div class="stat-ic">⏱️</div>
-          <div class="stat-num">1</div>
-          <div class="stat-sub">Ожидают подтверждения</div>
+          <div class="stat-num">{{ pendingIncomingCount }}</div>
+          <div>Ожидают подтверждения</div>
         </div>
       </Card>
+
       <Card padded>
         <div class="stat">
-          <div class="stat-ic flex">📦</div>
-          <div class="stat-num">{{ users?.inventories?.length }} товара</div>
-          <div class="stat-sub">В вашем инвентаре</div>
+          <div class="stat-ic">📦</div>
+          <div class="stat-num">{{ inventoryCount }} товара</div>
+          <div>В вашем инвентаре</div>
         </div>
       </Card>
     </div>
 
     <Card padded>
       <div class="card-title">Недавние переводы для Вас</div>
-      <div class="transfer-preview">
-        <div class="row-top">
-          <span>From: Mike Johnson</span>
-          <Badge kind="pending">ожидается</Badge>
-          <span class="muted">16.01.2024</span>
+
+      <div v-if="loading" class="text-center text-gray-500 py-4">Загрузка...</div>
+
+      <template v-else>
+        <div v-if="incoming.length === 0" class="text-center text-gray-500 py-4 text-sm">
+          Переводов пока нет.
         </div>
-        <div class="row-sub muted">3x Smartphone Assembly, 2x Laptop Kit</div>
-      </div>
+
+        <div
+          v-for="t in incoming"
+          :key="t.id"
+          class="transfer-preview border-b border-gray-100 py-2"
+        >
+          <div class="row-top">
+            <span>От: {{ t.fromUser?.name ?? '—' }} → К: {{ t.toUser?.name ?? '—' }}</span>
+            <Badge :kind="t.status">{{ t.status }}</Badge>
+            <span>{{ fmt.date(t.createdAt) }}</span>
+          </div>
+
+          <div class="row-sub">{{ fmt.units(t.units) }} — {{ t.item?.name ?? 'Без названия' }}</div>
+
+          <div v-if="t.comment" class="text-xs text-gray-500 mt-1">
+            Комментарий: {{ t.comment }}
+          </div>
+        </div>
+      </template>
     </Card>
 
     <Card padded>
       <div class="card-title">Мой инвентарь</div>
-      <ListItem v-for="inv in inventories" :key="inv.id ?? inv.item?.id">
-        <template #default>{{ inv.item?.name ?? '—' }}</template>
-        <template #right
-          ><span class="pill">{{ inv.units ?? 0 }}</span></template
-        >
-      </ListItem>
 
-      <ListItem>
-        <template #default>Laptop Kit</template>
+      <div v-if="inventories.length === 0" class="text-center text-gray-500 py-4 text-sm">
+        Инвентарь пуст — добавьте товары или обновите данные.
+      </div>
+
+      <ListItem v-for="inv in inventories" :key="inv.id ?? inv.item?.id ?? inv.itemId">
+        <template #default>
+          <div class="flex flex-col">
+            <span class="font-medium text-sm">{{ inv.item?.name ?? '—' }}</span>
+            <span class="text-xs text-gray-500">SKU: {{ inv.item?.sku ?? '—' }}</span>
+          </div>
+        </template>
         <template #right>
-          <span class="pill">12 units</span>
+          <span class="pill">{{ fmt.units(inv.units) }}</span>
         </template>
       </ListItem>
     </Card>

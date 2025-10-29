@@ -62,11 +62,10 @@ export default async function item(req: VercelRequest, res: VercelResponse) {
     }
     case 'DELETE':
       try {
-        const { id } = req.body;
-        console.log(id, 'API');
-        if (!id) return res.status(400).json({ error: 'id is required' });
+        const itemId = req.body?.id;
+        if (!itemId) return res.status(400).json({ error: 'id is required' });
 
-        const item = await prisma.item.delete({ where: { id } });
+        const item = await prisma.item.delete({ where: { id: itemId } });
         return res.status(200).json({ item });
       } catch (err) {
         return res.status(500).json({ error: 'Failed to delete' });

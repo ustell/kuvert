@@ -1,100 +1,127 @@
 <script setup lang="ts">
-import { onMounted, reactive, watch } from 'vue';
+import RowCard from '../../components/RowCard.vue';
+import ToolbarSearchStatus from '../../components/list/ToolbarSearchStatus.vue';
+import LoadingList from '../../components/common/LoadingList.vue';
+import EmptyState from '../../components/common/EmptyState.vue';
+import { onMounted, computed, ref, watch } from 'vue'; // ⬅️ добавили watch
 import { useTrans } from '../../stores/transfer';
 import type { Transaction } from '../../types/domain';
+import { useDebouncedRef } from '../../composables/useDebouncedRef';
+import { useFormat } from '../../composables/useFormat';
+import { useAction } from '../../composables/useAction';
 
 const trans = useTrans();
-onMounted(() => trans.fetchItems);
-const state = reactive<{ search: string; item: Transaction[] }>({
-  search: '',
-  item: [],
+const { act } = useAction();
+const fmt = useFormat('ru-RU');
+onMounted(() => trans.fetchItems().catch(console.error));
+
+const { raw: rawSearch, debounced: search } = useDebouncedRef('', 200);
+type StatusFilter = 'all' | 'pending' | 'accepted' | 'rejected';
+const status = ref<StatusFilter>('all');
+
+const norm = (s: unknown) =>
+  String(s ?? '')
+    .toLowerCase()
+    .trim();
+const items = computed<Transaction[]>(() => trans.transfer ?? []);
+
+// ▶️ ПАГИНАЦИЯ: настройки и сброс
+const PAGE = 5;
+const visibleCount = ref(PAGE);
+const resetVisible = () => (visibleCount.value = PAGE);
+
+// сбрасываем при изменении выдачи, строки поиска и статуса
+watch([items, search, status], () => resetVisible());
+
+// полная отфильтрованная выборка
+const filteredAll = computed(() => {
+  const tokens = (norm(search.value) || '').split(/\s+/).filter(Boolean);
+  const st = status.value;
+  return (items.value || []).filter((t) => {
+    if (st !== 'all' && String(t.status) !== st) return false;
+    if (!tokens.length) return true;
+    const hay = [
+      t.id,
+      t.item?.name,
+      t.item?.sku,
+      t.fromUser?.name ?? t.fromUserId,
+      t.toUser?.name ?? t.toUserId,
+      t.status,
+    ]
+      .map(norm)
+      .join(' ');
+    return tokens.every((x) => hay.includes(x));
+  });
 });
 
-watch(
-  () => trans.transfer,
-  (q) => {
-    state.item = q;
-  },
-  { immediate: true },
-);
+// видимая “страница”
+const filtered = computed(() => filteredAll.value.slice(0, visibleCount.value));
 
-const onSearch = () => {
-  console.log(state.search);
-  if (state.search.length > 0) {
-    console.log(state.item.filter((i) => i.id === state.search));
-  }
+// кнопка “загрузить ещё”
+const loadMore = () => {
+  visibleCount.value = Math.min(filteredAll.value.length, visibleCount.value + PAGE);
 };
+
+const statusKind = (s?: string) =>
+  s === 'accepted' ? 'success' : s === 'rejected' ? 'danger' : 'pending';
+
+const refresh = () =>
+  act(() => trans.fetchItems(), {
+    messages: { error: trans.error ?? 'Не удалось обновить список' },
+  }).finally(() => resetVisible());
 </script>
+
 <template>
-  <div class="space-y-3">
-    <!-- Фильтр (узкий) -->
-    <div class="flex items-center gap-2">
-      <input
-        type="text"
-        placeholder="Search…"
-        class="h-9 w-full rounded-md border border-gray-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-black/5"
-        v-model="state.search"
+  <div class="space-y-4">
+    <ToolbarSearchStatus
+      v-model="rawSearch"
+      v-model:status="status"
+      :disabled="trans.loading"
+      @refresh="refresh"
+    />
+
+    <LoadingList v-if="trans.loading" />
+
+    <!-- если нет результатов после фильтрации/поиска -->
+    <EmptyState v-else-if="!filteredAll.length" text="Ничего не найдено" />
+
+    <!-- список текущей "страницы" -->
+    <template v-else>
+      <RowCard
+        v-for="trx in filtered"
+        :key="trx.id"
+        :title="trx.item?.name ?? '—'"
+        :subtitle="`SKU: ${trx.item?.sku ?? '—'}`"
+        :badge="{ text: trx.status ?? '—', kind: statusKind(trx.status) as any }"
+        :pill="fmt.units(trx.units)"
+        :meta="[
+          { icon:'👥', text:`От: ${trx.fromUser?.name ?? trx.fromUserId} → К: ${trx.toUser?.name ?? trx.toUserId}` },
+          { icon:'📅', text:`Создано: ${fmt.date(trx.createdAt)}` },
+          { icon:'🆔', text:`ID: ${trx.id}` },
+          trx.meta ? { icon:'💬', text:`Комментарий: ${typeof trx.meta === 'string' ? trx.meta : JSON.stringify(trx.meta)}` } : null
+        ].filter(Boolean) as any"
       />
-      <button
-        class="h-9 shrink-0 rounded-md bg-gray-900 px-3 text-sm text-white hover:bg-black"
-        @click="onSearch"
+
+      <!-- кнопка "Загрузить ещё" -->
+      <div
+        v-if="filteredAll.length > filtered.length"
+        style="display: flex; justify-content: center; margin-top: 12px"
       >
-        Find
-      </button>
-    </div>
-
-    <Card class="user-card" v-for="value in state.item" padded>
-      <div class="space-y-2">
-        <!-- item -->
-        <div class="rounded-lg border border-gray-200 bg-white p-3">
-          <div class="flex items-center gap-3">
-            <div class="h-9 w-9 rounded-full bg-gray-200"></div>
-            <div class="min-w-0">
-              <div class="truncate text-sm font-medium text-gray-900">Шнырь</div>
-              <div class="text-xs text-gray-500">+7777777777</div>
-            </div>
-            <span class="ml-auto rounded border px-2 py-0.5 text-xs">Склад</span>
-          </div>
-
-          <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
-            <span
-              class="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 font-medium text-green-800"
-              >Ожидание</span
-            >
-            <div class="flex flex-col">
-              <span class="text-gray-500">Создано 2025-10-21</span>
-              <span class="text-gray-500">ID: 03431ef6-5139-4fe8-86f7-ed9a9966df1c</span>
-            </div>
-          </div>
-
-          <div class="mt-2 flex justify-end gap-2">
-            <button
-              class="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs hover:bg-gray-50"
-            >
-              Экран X 10
-            </button>
-          </div>
-        </div>
-
-        <!-- ещё карточки по образцу... -->
+        <button
+          type="button"
+          @click="loadMore"
+          :disabled="trans.loading"
+          style="
+            padding: 8px 14px;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            background: #fff;
+            cursor: pointer;
+          "
+        >
+          Загрузить ещё (показано {{ filtered.length }} из {{ filteredAll.length }})
+        </button>
       </div>
-
-      <!-- пагинация -->
-      <!-- <div class="mt-3 flex items-center justify-between text-xs text-gray-600">
-        <div>1–10 из 42</div>
-        <div class="flex items-center gap-1">
-          <button class="h-8 rounded border border-gray-200 bg-white px-2 hover:bg-gray-50">
-            Prev
-          </button>
-          <button class="h-8 rounded bg-gray-900 px-2 text-white hover:bg-black">1</button>
-          <button class="h-8 rounded border border-gray-200 bg-white px-2 hover:bg-gray-50">
-            2
-          </button>
-          <button class="h-8 rounded border border-gray-200 bg-white px-2 hover:bg-gray-50">
-            Next
-          </button>
-        </div>
-      </div> -->
-    </Card>
+    </template>
   </div>
 </template>

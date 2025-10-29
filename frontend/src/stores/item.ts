@@ -1,129 +1,180 @@
 import { defineStore } from 'pinia';
 import type { Item } from '../types/domain';
 import http from '../libs/http';
+import {
+  TTL,
+  isFresh,
+  nextSeq,
+  isLatest,
+  upsertById,
+  removeById,
+  now,
+  withLoading,
+} from './_utils';
+import { unwrapList } from '../libs/api';
+
+type State = {
+  items: Item[];
+  loading: boolean;
+  error: string | null;
+  isLoaded: boolean;
+  lastFetched: number | null;
+  _reqSeq: number;
+};
 
 export const useItem = defineStore('item', {
-  state: () => ({
-    items: undefined as Item[] | undefined,
-    loading: false as boolean,
-    error: '' as string | null,
-    isLoaded: false as boolean,
-    lastFetched: null as number | null,
+  state: (): State => ({
+    items: [],
+    loading: false,
+    error: null,
+    isLoaded: false,
+    lastFetched: null,
+    _reqSeq: 0,
   }),
+
+  getters: {
+    list: (s) => s.items,
+    byId: (s) => (id: string) => s.items.find((i) => String(i.id) === String(id)) ?? null,
+  },
+
   actions: {
-    async fetchItems(signal?: AbortSignal): Promise<boolean> {
-      const now = Date.now();
-      try {
-        if (this.isLoaded && this.lastFetched && now - this.lastFetched < 50000) {
-          console.log('lastFetched', this.lastFetched, now);
-          return false;
-        }
-        this.loading = true;
+    invalidate() {
+      this.isLoaded = false;
+      this.lastFetched = null;
+    },
+
+    async fetchItems(signal?: AbortSignal, force = false) {
+      if (!force && this.isLoaded && isFresh(this.lastFetched, TTL.short)) return true;
+
+      const seq = nextSeq(this);
+      return withLoading(this, async () => {
         this.error = null;
-        const row = await http<{ data: Item[] }>('GET', 'api/auth/items', undefined, {
-          delay: 1000,
-          signal,
-        });
-        if (!row.ok) {
-          this.error = 'Поизошла ошибка';
+        const res = await http('GET', '/api/auth/items', undefined, { signal, delay: 10_000 });
+        if (!res.ok) {
+          if (isLatest(this, seq)) this.error = res.error ?? `HTTP ${res.status}`;
           return false;
         }
-        const payload = (row.data as any).data ?? row.data ?? [];
-        const items = (payload && (payload.items ?? payload)) as Item[];
-        console.log(items);
-        if (items.length === 0) {
-          this.error = 'Ничего не найдено';
+        if (isLatest(this, seq)) {
+          this.items = unwrapList<Item>(res.data);
+          this.isLoaded = true;
+          this.lastFetched = now();
         }
-        this.isLoaded = true;
-        this.lastFetched = now;
-        this.items = items;
         return true;
-      } catch (error) {
-        this.error = 'Поизошла ошибка';
-        return false;
-      } finally {
-        this.loading = false;
-      }
+      });
     },
-    async deleteItem(id: string) {
+
+    async deleteItem(id: string, optimistic = true) {
       this.error = null;
-      this.loading = true;
+      const prev = this.items;
+      if (optimistic) this.items = removeById(prev, id);
+
       try {
-        const row = await http('DELETE', 'api/auth/items', { id });
-        if (!row.ok) {
-          this.error = 'Pinia error';
+        const res = await http('DELETE', '/api/auth/items', { id }, { delay: 15_000 });
+        if (!res.ok) {
+          this.error = res.error ?? 'Не удалось удалить товар';
+          if (optimistic) this.items = prev;
           return false;
         }
-        this.items = this.items?.filter((i) => i.id !== id);
-      } catch (error) {
-        console.log('error', error);
-      } finally {
-        this.loading = false;
+        return true;
+      } catch (e: any) {
+        this.error = e?.message ?? 'Network error';
+        if (optimistic) this.items = prev;
+        return false;
       }
     },
-    async createItem(sku: string, name: string, comp?: []) {
-      this.error = '';
-      this.loading = true;
+
+    async createItem(
+      sku: string,
+      name: string,
+      comp?: Array<{ sku: string; qty: number }>,
+      optimistic = true,
+    ) {
+      this.error = null;
+      const tempId = `tmp_${Date.now()}`;
+      const prev = this.items;
+      if (optimistic) this.items = [{ id: tempId, sku, name, comp } as any, ...prev];
+
       try {
         const res = await http<{ item: Item }>(
           'POST',
           '/api/auth/items',
-          { sku, name, comp }, // ← массив { sku, qty }
-          { delay: 3000 },
+          { sku, name, comp },
+          { delay: 20_000 },
         );
-
         if (!res.ok) {
-          this.error = (res as any).error || 'Server returned an error';
+          this.error = res.error ?? 'Ошибка при создании';
+          if (optimistic) this.items = prev;
           return false;
         }
 
-        const payload = (res.data as any).item ?? res.data;
+        const payload = ((res.data as any)?.item ?? res.data) as Item | null;
         if (!payload) {
-          this.error = 'Server returned an error';
-          return false;
+          await this.fetchItems(undefined, true);
+          return true;
         }
-        this.items?.push(payload);
+
+        this.items = optimistic
+          ? (() => {
+              const idx = this.items.findIndex((i) => i.id === tempId);
+              return idx !== -1
+                ? [...this.items.slice(0, idx), payload, ...this.items.slice(idx + 1)]
+                : upsertById(this.items, payload);
+            })()
+          : upsertById(this.items, payload);
+
         return true;
-      } catch (error) {
-        console.log('Server error', error);
-        this.error = 'Server error';
+      } catch (e: any) {
+        this.error = e?.message ?? 'Network error';
+        if (optimistic) this.items = prev;
         return false;
-      } finally {
-        this.loading = false;
       }
     },
+
     async updateItem(
       id: string,
       sku: string,
       name: string,
       comp?: Array<{ id?: string; sku?: string; qty?: number }>,
+      optimistic = true,
     ) {
-      this.loading = true;
       this.error = null;
+
+      const idx = this.items.findIndex((i) => String(i.id) === String(id));
+      const prevItem = idx !== -1 ? { ...this.items[idx] } : null;
+
+      if (optimistic && idx !== -1) {
+        this.items = [
+          ...this.items.slice(0, idx),
+          { ...this.items[idx], sku, name, comp } as Item,
+          ...this.items.slice(idx + 1),
+        ];
+      }
+
       try {
-        const res = await http<{ data: Item }>(
-          'PATCH',
-          '/api/auth/items', // <-- ведущий слэш
-          { id, sku, name, comp },
-          undefined,
-        );
+        const res = await http<{ data?: Item; item?: Item }>('PATCH', '/api/auth/items', {
+          id,
+          sku,
+          name,
+          comp,
+        });
         if (!res.ok) {
-          console.log('ОШИБКА', res.error);
+          this.error = res.error ?? 'Ошибка при обновлении';
+          if (optimistic && idx !== -1 && prevItem) {
+            this.items = [...this.items.slice(0, idx), prevItem, ...this.items.slice(idx + 1)];
+          }
           return false;
         }
-        const payload = res.data?.data;
-        if (payload) {
-          const index = this.items!.findIndex((i) => i.id === id);
-          if (index !== -1) {
-            this.items!.splice(index, 1, payload);
-          }
-        }
+
+        const payload = (res.data as any)?.data ?? (res.data as any)?.item ?? null;
+        this.items = payload ? upsertById(this.items, payload) : this.items;
+        if (!payload) await this.fetchItems(undefined, true);
         return true;
-      } catch (error) {
-        console.log('error', error);
+      } catch (e: any) {
+        this.error = e?.message ?? 'Network error';
+        if (optimistic && idx !== -1 && prevItem) {
+          this.items = [...this.items.slice(0, idx), prevItem, ...this.items.slice(idx + 1)];
+        }
         return false;
-      } finally {
-        this.loading = false;
       }
     },
   },

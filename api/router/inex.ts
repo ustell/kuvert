@@ -3,16 +3,18 @@ import transfer from '../transfer/transfet';
 import { Router } from 'express';
 import login from '../auth/login';
 import me from '../auth/me';
+import logout from '../auth/logout';
 import items from '../item/item';
 import users from '../user/users';
 import item from '../item/item';
-import inventories from '../inventories/inventories';
 import recipes from '../recipes/recipes';
+import roles from '../roles/roles.ts';
 
 const r = Router();
 
 r.post('/login', login);
 r.get('/me', me);
+r.post('/logout', logout);
 r.get('/item', items);
 
 // USERS
@@ -34,5 +36,7 @@ r.get('/transfer', transfer);
 r.post('/transfer', transfer);
 r.patch('/transfer', transfer);
 r.delete('/transfer', transfer);
+
+r.get('/roles', roles);
 
 export default r;

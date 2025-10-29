@@ -1,29 +1,45 @@
-import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
-import DashboardPage from "../views/DashboardPage.vue"
-import LoginPage from "../views/LoginPage.vue"
-import AcceptPage from "../views/AcceptPage.vue"
-import CreatePage from "../views/CreatePage.vue"
-import AdminPage from "../views/AdminPage.vue"
-import { useAuth } from '../stores/auth'
+// src/router/index.ts
+import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
+import DashboardPage from '../views/DashboardPage.vue';
+import LoginPage from '../views/LoginPage.vue';
+import AcceptPage from '../views/AcceptPage.vue';
+import CreatePage from '../views/CreatePage.vue';
+import AdminPage from '../views/AdminPage.vue';
+import { useAuth } from '../stores/auth';
+import { bootReady } from '../services/bootGate'; // <-- ждём, прежде чем что-то решать
 
-const router: RouteRecordRaw[] = [
-    { path: "/", meta: { name: "Dashboard" }, component: DashboardPage },
-    { path: "/login", meta: { name: "Login" }, component: LoginPage },
-    { path: "/accept", meta: { name: "Accept" }, component: AcceptPage },
-    { path: "/create", meta: { name: "Create" }, component: CreatePage },
-    { path: "/admin", meta: { name: "Admin" }, component: AdminPage },
-]
+const routes: RouteRecordRaw[] = [
+  { path: '/', component: DashboardPage, meta: { name: 'Dashboard', auth: true } },
+  { path: '/accept', component: AcceptPage, meta: { name: 'Accept', auth: true } },
+  { path: '/create', component: CreatePage, meta: { name: 'Create', auth: true } },
+  { path: '/admin', component: AdminPage, meta: { name: 'Admin', auth: true } },
+  { path: '/login', component: LoginPage, meta: { name: 'Login', auth: false } },
+  { path: '/:pathMatch(.*)*', redirect: '/' },
+];
 
-const routers = createRouter({
-    history: createWebHistory(),
-    routes: router
-})
+const router = createRouter({
+  history: createWebHistory(),
+  routes,
+  scrollBehavior: () => ({ top: 0 }),
+});
 
-// routers.beforeEach((to, from) => {
-//     const auth = useAuth()
-//     if (!auth.isAutorizited && to.path !== "/login") {
-//         return { path: "/login" }
-//     }
-// })
+router.beforeEach(async (to) => {
+  // 🔒 главный трюк: ПЕРЕД любой логикой ждём, пока boot завершится.
+  await bootReady;
 
-export default routers
+  const auth = useAuth();
+  if (typeof to.meta?.name === 'string') document.title = to.meta.name as string;
+
+  const isLogin = to.path === '/login';
+  const requiresAuth = (to.meta.auth ?? true) && !isLogin;
+
+  if (requiresAuth && !auth.users) {
+    return { path: '/login', query: { redirect: to.fullPath } };
+  }
+  if (!requiresAuth && auth.users) {
+    return { path: '/' };
+  }
+  return true;
+});
+
+export default router;

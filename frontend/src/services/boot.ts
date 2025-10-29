@@ -1,5 +1,4 @@
 // src/services/boot.ts
-import { pinia } from '../stores/pinia';
 import { useAuth, useUsers, useItem } from '../stores';
 import { useTrans } from '../stores/transfer';
 
@@ -27,39 +26,27 @@ export async function boot(opts: BootOptions = {}): Promise<BootResult> {
     ...(opts.with ?? {}),
   };
 
-  // Получаем экземпляры стора вне setup: передаём pinia вручную
+  // Инициализируем сторы (они уже будут привязаны к active pinia после app.use(createPinia()))
   const authStore = useAuth();
   const usersStore = useUsers();
   const itemStore = useItem();
-  const itemTrans = useTrans();
+  const transStore = useTrans();
 
-  const tasks: Promise<any>[] = [];
+  const tasks: Promise<unknown>[] = [];
 
-  if (cfg.me) {
-    tasks.push(authStore.me?.(opts.signal) ?? Promise.resolve(true));
-  }
-  if (cfg.users) {
-    tasks.push(usersStore.getUser?.() ?? Promise.resolve(true));
-  }
-  if (cfg.items) {
-    tasks.push(itemStore.fetchItems?.(opts.signal) ?? Promise.resolve(true));
-  }
-  if (cfg.trans) {
-    tasks.push(itemTrans.fetchItems?.(opts.signal) ?? Promise.resolve(true));
-  }
+  if (cfg.me) tasks.push(authStore.me?.(opts.signal) ?? Promise.resolve(true));
+  if (cfg.users) tasks.push(usersStore.getUser?.() ?? Promise.resolve(true));
+  if (cfg.items) tasks.push(itemStore.fetchItems?.(opts.signal) ?? Promise.resolve(true));
+  if (cfg.trans) tasks.push(transStore.fetchItems?.(opts.signal) ?? Promise.resolve(true));
 
-  const results = await Promise.allSettled(tasks);
+  const settled = await Promise.allSettled(tasks);
 
   const errors: string[] = [];
   let allOk = true;
-  let idx = 0;
 
-  function normalize(value: any): boolean {
-    if (typeof value === 'boolean') return value;
-    return true;
-  }
+  const normalize = (value: unknown): boolean => (typeof value === 'boolean' ? value : true);
 
-  for (const r of results) {
+  settled.forEach((r, idx) => {
     if (r.status === 'fulfilled') {
       const ok = normalize(r.value);
       allOk = allOk && ok;
@@ -68,8 +55,7 @@ export async function boot(opts: BootOptions = {}): Promise<BootResult> {
       allOk = false;
       errors.push(r.reason instanceof Error ? r.reason.message : String(r.reason));
     }
-    idx++;
-  }
+  });
 
   return { ok: allOk, errors };
 }
