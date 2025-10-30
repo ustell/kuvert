@@ -2,7 +2,7 @@
   <div class="list-item" :class="{ clickable }" @click="$emit('click')">
     <div class="li-left">
       <slot name="left">
-        <div class="icon">📦</div>
+        <div class="icon"><Package :size="16" color="#333333" /></div>
       </slot>
       <div class="li-body">
         <div class="li-title"><slot /></div>
@@ -16,5 +16,7 @@
 </template>
 
 <script setup lang="ts">
+import {Package} from 'lucide-vue-next';
+
 defineProps<{ clickable?: boolean }>();
 </script>

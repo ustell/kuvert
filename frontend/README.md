@@ -1,3 +1,45 @@
+# Frontend — performance & analysis helpers
+
+This folder contains the Vue 3 + Vite frontend for the project. The repository includes a few helper scripts and CI workflow to analyze bundle size and Lighthouse performance.
+
+Quick commands (Windows cmd.exe):
+
+1. Install & build
+
+```
+cd frontend
+npm ci
+npm run build
+```
+
+2. Serve built files locally
+
+```
+npm run serve
+# open http://localhost:5000
+```
+
+3. Analyze bundle (generates `dist/report.html`)
+
+```
+npm run analyze
+# on Windows you may need to run: npm run analyze then open dist\report.html
+```
+
+4. Run Lighthouse locally (after serving `dist`):
+
+```
+npx lighthouse http://localhost:5000 --output=html --output-path=./lighthouse-report.html --preset=mobile
+```
+
+CI: The workflow `.github/workflows/lighthouse.yml` builds the frontend and runs Lighthouse, uploading `lighthouse-report.json` as an artifact.
+
+Notes / recommended next steps:
+
+- Convert heavy images to WebP/AVIF and add `loading="lazy"` where images are not critical for LCP.
+- Make route components lazy-loaded (already applied) and prefer dynamic imports for modals and heavy widgets.
+- Consider adding SSR / prerender for Dashboard if LCP remains high.
+
 # Frontend — исчерпывающий аудит (kuvert frontend)
 
 Документ содержит полный перечень файлов и краткое описание назначения каждого файла/папки в каталоге `frontend` проекта.

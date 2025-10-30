@@ -23,26 +23,11 @@ export const verifyToken = async (token: string) => {
     const uid = (payload as any).uid ?? (payload as any).sub;
     if (!uid) return null;
 
+    // Fetch only minimal user fields here to keep token verification fast.
+    // Avoid heavy relational includes (inventories/recipes) which slow down the request.
     const user = await prisma.user.findUnique({
       where: { id: uid },
-      include: {
-        role: true,
-        inventories: {
-          include: {
-            item: {
-              include: {
-                // Рецепты, где item является итоговым продуктом
-                recipesOf: {
-                  include: {
-                    // Сам компонент (экран, батарея и т.д.)
-                    componentItem: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
+      select: { id: true, name: true, phone: true, roleId: true },
     });
 
     return user ?? null;

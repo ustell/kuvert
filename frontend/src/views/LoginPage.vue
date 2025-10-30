@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, nextTick } from 'vue';
+import { useRouter } from 'vue-router';
 import Card from '../components/Card.vue';
 import Button from '../components/Button.vue';
 import { useAuth } from '../stores/auth';
+import { boot } from '../services/boot';
+import {Package} from 'lucide-vue-next';
 
 const phone = ref('');
 const password = ref('');
 const remember = ref(true);
 const show = ref(false);
 const auth = useAuth();
+const router = useRouter();
 
 const passRef = ref<HTMLInputElement | null>(null);
 const telRef = ref<HTMLInputElement | null>(null);
@@ -43,14 +47,22 @@ async function onSubmit(e: Event) {
     return;
   }
 
-  // success → редирект/очистка
-  // router.push({ name: 'dashboard' })
+  // success → boot data, then role-based redirect
+  const u: any = auth.users;
+  const isAdmin = !!(
+    u?.allowedTargets?.includes?.('admin') ||
+    (u?.role?.name && String(u.role.name).toLowerCase() === 'admin')
+  );
+  // redirect immediately
+  await router.replace(isAdmin ? '/admin' : '/');
+  // load data in background
+  void boot();
 }
 </script>
 
 <template>
   <div class="container login-wrap">
-    <div class="logo">📦</div>
+    <div class="logo"><Package :size="16" color="#333333" /></div>
     <div class="brand">Трекер товара</div>
     <div class="center">Авторизация</div>
 
@@ -70,7 +82,7 @@ async function onSubmit(e: Event) {
           />
         </div>
 
-        <label class="label mt12">Пароль</label>
+        <label class="label ">Пароль</label>
         <div class="field">
           <input
             ref="passRef"
@@ -86,20 +98,13 @@ async function onSubmit(e: Event) {
           </button>
         </div>
 
-        <div class="row-between mt12 mb-3">
-          <label class="check">
-            <input type="checkbox" v-model="remember" />
-            <span>Запомнить меня</span>
-          </label>
-          <button type="button" class="link muted">Забыли пароль?</button>
-        </div>
 
         <div v-if="state.localError" class="toast error mb-2">⚠ {{ state.localError }}</div>
 
         <Button
           variant="primary"
           :full="true"
-          class="mt12"
+          class="mt-2"
           :disabled="!canSubmit"
           :aria-busy="auth.loading"
         >

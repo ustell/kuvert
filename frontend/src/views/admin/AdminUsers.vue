@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
-
+import { onMounted, reactive, ref, computed } from 'vue';
+import {Eraser, Package} from 'lucide-vue-next';
 import RowCard from '../../components/RowCard.vue';
 import IconBtn from '../../components/IconBtn.vue';
 import Button from '../../components/Button.vue';
+import SearchList from '../../components/SearchList.vue';
 import UserModal from '../../components/modal/UserModal.vue';
 import GiveGoodsModal from '../../components/modal/GiveGoodsModal.vue';
 import EmptyState from '../../components/common/EmptyState.vue';
@@ -17,7 +18,7 @@ import { useBusySet } from '../../composables/useBusySet';
 
 import type { User } from '../../types/domain';
 import type { UserDTO } from '../../types/DTO';
-import http from '../../libs/http';
+import { useRoles } from '../../stores/roles';
 
 type Role = { id: string; name: string };
 
@@ -27,7 +28,8 @@ const trans = useTrans();
 const item = useItem();
 const { act } = useAction();
 const busy = useBusySet();
-const roles = ref<Role[]>([]);
+const rolesStore = useRoles();
+const roles = computed<Role[]>(() => rolesStore.roles as any);
 
 const state = reactive({
   openUserModal: false,
@@ -38,11 +40,11 @@ const state = reactive({
 
 onMounted(async () => {
   try {
-    usersStore.getUser?.();
+    // load users (no client-side limit by default)
+    usersStore.getUser?.(false);
     if (!auth.users) await auth.me();
     if (!item.items) await item.fetchItems();
-    const res = await http<Role[]>('GET', '/api/auth/roles');
-    if (res.ok) roles.value = res.data;
+    // roles приходят из bootstrap; если их нет — можно реализовать догрузку через apiClient при желании
   } catch (e) {
     console.error(e);
   }
@@ -95,7 +97,16 @@ function openGive(u: User) {
   state.openGive = true;
 }
 async function onConfirmGive(payload: { items: Array<{ itemId: string; qty: number }> }) {
-  const fromId = String(auth.users?.id ?? '');
+  const fromId = auth.users?.id || '';
+
+  if (!fromId) {
+    // подсказка пользователю + не слать битый запрос
+    return act(() => Promise.reject(new Error('Не удалось определить отправителя')), {
+      messages: { error: 'Вы не авторизованы или не получены данные профиля' },
+      ok: () => false,
+    });
+  }
+
   const toId = String(state.giveToUser?.id ?? '');
   const res = await act(() => trans.create(fromId, toId, payload.items, null, { force: true }), {
     messages: {
@@ -104,7 +115,8 @@ async function onConfirmGive(payload: { items: Array<{ itemId: string; qty: numb
     },
     ok: (x: any) => !!x?.ok,
   });
-  if ((res as any)?.ok) {
+
+  if (res?.ok) {
     state.openGive = false;
     state.giveToUser = null;
   }
@@ -113,31 +125,36 @@ async function onConfirmGive(payload: { items: Array<{ itemId: string; qty: numb
 
 <template>
   <div>
-    <Button variant="primary" :full="true" class="mt12" @click="onOpenCreate"
-      >＋ Добавить нового пользователя</Button
-    >
-    <EmptyState v-if="!usersStore.users?.length" text="Пользователей пока нет" />
-    <RowCard
-      v-for="u in usersStore.users"
-      :key="u.id"
-      :title="u.name"
-      :subtitle="u.phone ? `📞 ${u.phone}` : '—'"
-      :badge="{ text: u.role?.name ?? '—' }"
-    >
-      <template #avatar>👤</template>
-      <template #actions>
-        <IconBtn title="Выдать товары" @click="openGive(u)">📦</IconBtn>
-        <IconBtn title="Редактировать" @click="onOpenEdit(u)">✎</IconBtn>
-        <IconBtn
-          :disabled="busy.has(u.id)"
-          variant="danger"
-          title="Удалить"
-          @click="deleteUser(u.id)"
-        >
-          <template v-if="busy.has(u.id)">⏳</template><template v-else>🗑</template>
-        </IconBtn>
+    <Button variant="primary" :full="true" class="" @click="onOpenCreate">＋ Добавить нового пользователя</Button>
+
+    <SearchList :items="usersStore.users ?? []" :loading="false" placeholder="Поиск по имени или телефону" :filterKeys="['name','phone']">
+      <template #default="{ items }">
+        <EmptyState v-if="!items.length" text="Пользователей пока нет" />
+        <template v-else>
+          <RowCard
+            v-for="u in items"
+            :key="u.id"
+            :title="u.name"
+            :subtitle="u.phone ? `📞 ${u.phone}` : '—'"
+            :badge="{ text: u.role?.name ?? '—' }"
+          >
+            <template #avatar>👤</template>
+            <template #actions>
+              <IconBtn title="Выдать товары" @click="openGive(u)"><Package :size="16" color="#333333" /></IconBtn>
+              <IconBtn title="Редактировать" @click="onOpenEdit(u)"><Eraser :size="16" color="#333333" /></IconBtn>
+              <IconBtn
+                :disabled="busy.has(u.id)"
+                variant="danger"
+                title="Удалить"
+                @click="deleteUser(u.id)"
+              >
+                <template v-if="busy.has(u.id)">⏳</template><template v-else>🗑</template>
+              </IconBtn>
+            </template>
+          </RowCard>
+        </template>
       </template>
-    </RowCard>
+    </SearchList>
   </div>
 
   <UserModal

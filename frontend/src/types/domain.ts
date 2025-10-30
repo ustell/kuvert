@@ -89,7 +89,7 @@ export interface Paginated<T> {
 }
 
 // =============================
-// 📦 Общие типы
+// 📦  Общие типы
 // =============================
 
 export type UUID = string;
@@ -255,4 +255,4 @@ export interface TransferUpdateResponseError {
 
 export type TransferApiResponse = TransferCreateResponse | TransferUpdateResponse;
 
-export type Result<T> = { ok: true; data: any } | { ok: false; error: string };
+export type Result = { ok: true; data: any } | { ok: false; error: string };

@@ -3,7 +3,7 @@ import Card from '../../components/Card.vue';
 import { Options } from '..';
 import { SelectItem } from '../ui/select';
 
-const props = defineProps<{
+const { allowedTargets, modelValue, disabled, touched } = defineProps<{
   currentUserName?: string | null;
   allowedTargets: Array<{
     id: string | number;
@@ -21,7 +21,7 @@ const emit = defineEmits<{ (e: 'update:modelValue', v: string | null): void }>()
 <template>
   <Card padded>
     <div class="card-title">Данные о передаче</div>
-    <label class="label mt12">Кому пользователю</label>
+    <label class="label ">Кому пользователю</label>
     <div class="field">
       <Options
         :model-value="modelValue"
@@ -40,7 +40,9 @@ const emit = defineEmits<{ (e: 'update:modelValue', v: string | null): void }>()
         </SelectItem>
       </Options>
     </div>
-
+    <div v-if="!allowedTargets.length" class="hint text-sm text-center mt-2">
+      Нет доступных получателей. Обратитесь к администратору.
+    </div>
     <div v-if="touched && !modelValue" class="hint text-red-600 text-sm text-center mt-2">
       Выберите получателя.
     </div>

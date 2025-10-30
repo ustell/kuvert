@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia';
 import type { User } from '../types/domain';
 import type { UserDTO } from '../types/DTO';
-import http from '../libs/http';
+import apiClient from '../libs/apiClient';
+import { formatError } from '../libs/errorHandler';
 import { TTL, isFresh, nextSeq, isLatest, upsertById } from './_utils';
 
 type Store = {
@@ -11,6 +12,10 @@ type Store = {
   isLoaded: boolean;
   lastFetched: number | null;
   _reqSeq: number;
+  page: number;
+  limit: number | null;
+  total: number | null;
+  hasMore: boolean;
 };
 
 export const useUsers = defineStore('users', {
@@ -21,6 +26,10 @@ export const useUsers = defineStore('users', {
     isLoaded: false,
     lastFetched: null,
     _reqSeq: 0,
+    page: 0,
+    limit: null,
+    total: null,
+    hasMore: false,
   }),
 
   getters: {
@@ -34,24 +43,69 @@ export const useUsers = defineStore('users', {
       this.lastFetched = null;
     },
 
-    async getUser(force = false) {
-      if (!force && this.isLoaded && isFresh(this.lastFetched, TTL.medium)) return true;
+    async fetchUserById(id: string, force = false) {
+      if (!id) return null;
+      // If we already have it and not forced, return from state
+      const existing = this.users.find((u) => String(u.id) === String(id));
+      if (existing && !force) return existing;
+
+      this.loading = true;
+      this.error = null;
+      try {
+        const res = await apiClient.getUser(id);
+        if (!res.ok) {
+          this.error = formatError(res);
+          return null;
+        }
+        const payload = res.data as User | null;
+        if (payload) {
+          this.users = upsertById(this.users, payload);
+          return payload;
+        }
+        return null;
+      } catch (e: any) {
+        this.error = e?.message ?? 'Network error';
+        return null;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async getUser(force = false, page = 1, limit: number | null = null, append = false) {
+      // if not forced and recently loaded and requesting first page, skip
+      if (!force && page === 1 && this.isLoaded && isFresh(this.lastFetched, TTL.medium))
+        return true;
 
       const seq = nextSeq(this);
       this.loading = true;
       this.error = null;
 
       try {
-        const res = await http('GET', '/api/auth/users');
+        // if limit is null -> request full list from server (all=true)
+        const res =
+          limit === null
+            ? await apiClient.getUsers(undefined, undefined, undefined, true)
+            : await apiClient.getUsers(page, limit);
         if (!res.ok) {
-          if (isLatest(this, seq)) this.error = res.error ?? `HTTP ${res.status}`;
+          if (isLatest(this, seq)) this.error = formatError(res);
           return false;
         }
-        const payload = (((res.data as any)?.data ?? res.data) as User[]) || [];
+        const payload = (res.data ?? []) as User[];
         if (isLatest(this, seq)) {
-          this.users = [...payload];
+          this.users = append ? [...this.users, ...payload] : (payload as User[]);
           this.isLoaded = true;
           this.lastFetched = Date.now();
+          this.page = page;
+          this.limit = limit as any;
+          const meta = (res as any).meta as any;
+          if (meta) {
+            this.total = meta.total ?? null;
+            this.hasMore = meta.page * meta.limit < (meta.total ?? 0);
+          } else {
+            // when requesting full list (limit === null) we consider there is no more to fetch
+            this.total = payload.length ?? null;
+            this.hasMore = false;
+          }
         }
         return true;
       } catch (e: any) {
@@ -82,30 +136,25 @@ export const useUsers = defineStore('users', {
         ...(roleId ? { role: { id: roleId, name: '' } as any } : {}),
       } as any;
 
-      if (optimistic) this.users = [tmp, ...this.users];
+      if (optimistic) this.users = [tmp, ...this.users] as User[];
 
       try {
-        const res = await http<{ user: User }>('POST', '/api/auth/users', {
-          name,
-          phone,
-          password,
-          roleId,
-        });
+        const res = await apiClient.createUser({ name, phone, password, roleId });
         if (!res.ok) {
-          this.error = res.error ?? 'Ошибка при создании пользователя';
+          this.error = formatError(res);
           if (optimistic) this.users = this.users.filter((u) => u.id !== tmpId);
           return false;
         }
 
-        const payload = ((res.data as any)?.user ?? res.data) as User;
+        const payload = res.data as User | null;
         if (optimistic) {
           const i = this.users.findIndex((u) => u.id === tmpId);
           this.users =
             i !== -1
-              ? [...this.users.slice(0, i), payload, ...this.users.slice(i + 1)]
-              : [payload, ...this.users];
+              ? ([...this.users.slice(0, i), payload, ...this.users.slice(i + 1)] as User[])
+              : ([payload, ...this.users] as User[]);
         } else {
-          this.users = [payload, ...this.users];
+          this.users = [payload as User, ...this.users] as User[];
         }
         return true;
       } catch (e: any) {
@@ -125,9 +174,9 @@ export const useUsers = defineStore('users', {
       if (optimistic) this.users = prev.filter((u) => u.id !== id);
 
       try {
-        const res = await http('DELETE', '/api/auth/users', { id });
+        const res = await apiClient.deleteUser(id);
         if (!res.ok) {
-          this.error = res.error ?? 'Не удалось удалить пользователя';
+          this.error = formatError(res);
           if (optimistic) this.users = prev;
           return false;
         }
@@ -154,32 +203,26 @@ export const useUsers = defineStore('users', {
           ...this.users.slice(0, idx),
           { ...this.users[idx], ...patch },
           ...this.users.slice(idx + 1),
-        ];
+        ] as User[];
       }
 
       try {
-        const res = await http<{ user: User }>('PATCH', '/api/auth/users', {
-          id,
-          name,
-          phone,
-          password,
-          roleId,
-        });
+        const res = await apiClient.updateUser({ id, name, phone, password, roleId });
         if (!res.ok) {
-          this.error = res.error ?? 'Ошибка при обновлении пользователя';
+          this.error = formatError(res);
           if (optimistic && idx !== -1 && prev) {
-            this.users = [...this.users.slice(0, idx), prev, ...this.users.slice(idx + 1)];
+            this.users = [...this.users.slice(0, idx), prev as User, ...this.users.slice(idx + 1)];
           }
           return false;
         }
 
-        const payload = ((res.data as any)?.user ?? res.data) as User;
+        const payload = res.data as User | null;
         if (payload) this.users = upsertById(this.users, payload);
         return true;
       } catch (e: any) {
         this.error = e?.message ?? 'Network error';
         if (optimistic && idx !== -1 && prev) {
-          this.users = [...this.users.slice(0, idx), prev, ...this.users.slice(idx + 1)];
+          this.users = [...this.users.slice(0, idx), prev as User, ...this.users.slice(idx + 1)];
         }
         return false;
       } finally {

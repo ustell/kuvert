@@ -1,3 +1,4 @@
+// stores/auth.ts
 import { defineStore } from 'pinia';
 import type { User } from '../types/domain';
 import { tokenStorage } from '../libs/token';
@@ -41,27 +42,28 @@ export const useAuth = defineStore('auth', {
   },
 
   actions: {
-    authHeaders() {
+    authHeaders(): Record<string, string> | undefined {
       const token = tokenStorage.get();
-      return token ? { Authorization: `Bearer ${token}` } : {};
+      return token ? { Authorization: `Bearer ${token}` } : undefined;
     },
 
     async login(phone: string, password: string, remember = true) {
       this.loading = true;
       this.error = null;
       try {
-        const res = await http('POST', 'api/auth/login', { phone, password });
+        const res = await http('POST', '/api/auth/login', { phone, password });
         if (!res.ok) {
           const message = msgByCode(res.status, res.error);
           this.error = message;
           return { ok: false, code: res.status, message };
         }
-        const { user, token } = pickUserToken(res.data);
+        const { user, token, allowedTargets } = pickUserToken(res.data);
         if (!user) {
           this.error = 'Пользователь не найден';
           return { ok: false, code: 0, message: this.error };
         }
-        if (token && remember) tokenStorage.set(token);
+        if (remember) tokenStorage.set(token ?? null);
+        if (Array.isArray(allowedTargets)) (user as any).allowedTargets = allowedTargets;
         this.users = user;
         return { ok: true };
       } catch (e: any) {
@@ -76,8 +78,8 @@ export const useAuth = defineStore('auth', {
       this.loading = true;
       this.isFetchingMe = true;
       try {
-        const res = await http('GET', 'api/auth/me', undefined, {
-          Headers: this.authHeaders(),
+        const res = await http('GET', '/api/auth/me', undefined, {
+          headers: this.authHeaders(), // 👈 правильное имя headers
           signal,
           timeoutMs: 8000,
         });
@@ -104,12 +106,10 @@ export const useAuth = defineStore('auth', {
 
     async logout(localOnly = false) {
       try {
-        tokenStorage.clear(); // убираем Bearer токен из localStorage
-        this.users = null; // гасим текущего пользователя
-
+        tokenStorage.clear();
+        this.users = null;
         if (!localOnly) {
-          // попробуем попросить бэк удалить cookie (если настроишь эндпоинт ниже)
-          await http('POST', 'api/auth/logout').catch(() => {});
+          await http('POST', '/api/auth/logout').catch(() => {});
         }
       } finally {
         this.loading = false;

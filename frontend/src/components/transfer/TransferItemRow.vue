@@ -1,17 +1,17 @@
 <script setup lang="ts">
 type Row = {
-  id: string | number;
+  id?: string | number;
   qty: number;
   units?: number | string | null;
   item?: { name?: string | null } | null;
 };
-const props = defineProps<{ row: Row; canInc: boolean; disabled?: boolean }>();
-const emit = defineEmits<{ (e: 'inc'): void; (e: 'dec'): void }>();
+const { row, canInc, disabled } = defineProps<{ row: Row; canInc: boolean; disabled?: boolean }>();
+const emit = defineEmits<{ (e: 'inc'): void; (e: 'dec'): void; (e: 'set', v: number): void }>();
 </script>
 
 <template>
   <div class="mb-3 rounded-lg border border-gray-200 bg-white p-3">
-    <div class="flex items-center justify-between gap-3">
+    <div class="flex items-center justify-between gap-3 flex-col">
       <div class="flex items-center gap-3 flex-col">
         <div class="text-base font-medium">{{ row.item?.name ?? '—' }}</div>
         <div class="tag" :title="`Доступно: ${Number(row.units ?? 0)}`">
@@ -26,7 +26,8 @@ const emit = defineEmits<{ (e: 'inc'): void; (e: 'dec'): void }>();
           type="number"
           :value="row.qty"
           class="w-14 rounded border px-2 py-1 text-center"
-          readonly
+          :disabled="!!disabled"
+          @input="(e: any) => emit('set', Math.max(1, Number(e?.target?.value ?? 1)))"
         />
         <button
           class="rounded bg-gray-100 px-2 py-1"

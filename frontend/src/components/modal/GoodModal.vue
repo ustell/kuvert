@@ -1,12 +1,17 @@
 <script setup lang="ts">
+import {Puzzle} from 'lucide-vue-next'
 import { computed, reactive, watch } from 'vue';
 import Button from '../../components/Button.vue';
+import Input from '../Input.vue';
+import QtyControl from '../QtyControl.vue';
 import Modal from './Modal.vue';
+import { useDebouncedRef } from '../../composables/useDebouncedRef';
+
 import type { Item } from '../../types/domain';
 
 type CompRow = { item: Item; qty: number };
 
-const props = defineProps<{
+const { modelValue, title, currentItem, items } = defineProps<{
   modelValue: boolean;
   title: string;
   currentItem: Item | null;
@@ -26,11 +31,11 @@ const emit = defineEmits<{
 const local = reactive({
   sku: '',
   name: '',
-  rawSearch: '',
-  search: '',
   compMap: new Map<string, CompRow>(), // для создания
   editCompMap: new Map<string, CompRow>(), // для редактирования
 });
+
+const { raw: searchRaw, debounced: search } = useDebouncedRef('', 160);
 
 const state = reactive({
   touched: false,
@@ -39,22 +44,20 @@ const state = reactive({
 });
 
 const open = computed({
-  get: () => props.modelValue,
+  get: () => modelValue,
   set: (v) => emit('update:modelValue', v),
 });
 
-const isEditMode = computed(() => !!props.currentItem);
+const isEditMode = computed(() => !!currentItem);
 const activeMap = computed(() => (isEditMode.value ? local.editCompMap : local.compMap));
 const rows = computed<CompRow[]>(() => Array.from(activeMap.value.values()));
 
 // SKU самого товара (нельзя выбрать как компонент)
-const selfSku = computed(() =>
-  (isEditMode.value ? props.currentItem?.sku ?? '' : local.sku).trim(),
-);
+const selfSku = computed(() => (isEditMode.value ? currentItem?.sku ?? '' : local.sku).trim());
 
 // инициализация из currentItem
 watch(
-  () => props.currentItem,
+  () => currentItem,
   (it) => {
     local.compMap.clear();
     local.editCompMap.clear();
@@ -65,6 +68,7 @@ watch(
     if (it) {
       local.sku = it.sku ?? '';
       local.name = it.name ?? '';
+
       for (const r of it.recipesOf ?? []) {
         const comp = r.componentItem as Item | undefined;
         if (!comp?.sku) continue;
@@ -74,30 +78,32 @@ watch(
     } else {
       local.sku = '';
       local.name = '';
-      local.rawSearch = '';
-      local.search = '';
+      searchRaw.value = '';
     }
   },
   { immediate: true },
 );
 
+function resetLocal() {
+  local.sku = '';
+  local.name = '';
+  searchRaw.value = '';
+  local.compMap.clear();
+  local.editCompMap.clear();
+  state.touched = false;
+  state.touchedField = { sku: false, name: false };
+  state.errors = { sku: '', name: '' };
+}
+
 // при закрытии модалки сбрасываем currentItem
 watch(
   () => open.value,
   (isOpen) => {
-    if (!isOpen) emit('update:currentItem', null);
-  },
-);
-
-// дебаунс поиска по компонентам
-let t: number | undefined;
-watch(
-  () => local.rawSearch,
-  (v) => {
-    if (t) window.clearTimeout(t);
-    t = window.setTimeout(() => {
-      local.search = (v ?? '').toString().toLowerCase().trim();
-    }, 160);
+    if (!isOpen) {
+      emit('update:currentItem', null);
+      // Also clear local state for create mode (when currentItem is already null)
+      resetLocal();
+    }
   },
 );
 
@@ -124,19 +130,35 @@ function dec(sku: string) {
 function removeBySku(sku: string) {
   activeMap.value.delete((sku ?? '').trim());
 }
-const isAdded = (it: Item) => activeMap.value.has((it.sku ?? '').trim());
+// helper to check if component already added
+// (kept as function where needed later)
+// const isAdded = (it: Item) => activeMap.value.has((it.sku ?? '').trim());
+
+function setSku(v: string) {
+  local.sku = v;
+}
+function setName(v: string) {
+  local.name = v;
+}
+function setRawSearch(v: string) {
+  searchRaw.value = v;
+}
 
 // кандидаты: без самого товара и без уже выбранных
+const excluded = computed(() => new Set(Array.from(activeMap.value.keys())));
 const candidates = computed(() => {
-  const s = local.search;
-  const list = props.items ?? [];
+  const s = (search.value ?? '').toString().toLowerCase().trim();
+  const self = selfSku.value;
+  const list = items ?? [];
   return list
-    .filter((it) => (it.sku ?? '').trim() !== selfSku.value)
-    .filter((it) => !activeMap.value.has((it.sku ?? '').trim()))
-    .filter(
-      (it) =>
-        !s || (it.name ?? '').toLowerCase().includes(s) || (it.sku ?? '').toLowerCase().includes(s),
-    );
+    .filter((it) => (it.sku ?? '').trim() !== self)
+    .filter((it) => !excluded.value.has((it.sku ?? '').trim()))
+    .filter((it) => {
+      if (!s) return true;
+      const name = String(it.name ?? '').toLowerCase();
+      const sku = String(it.sku ?? '').toLowerCase();
+      return name.includes(s) || sku.includes(s);
+    });
 });
 
 // валидация (без сайд-эффектов)
@@ -170,11 +192,11 @@ function save() {
 function update() {
   state.touched = true;
   markTouched();
-  if (!validateAndFillErrors() || !props.currentItem) return;
+  if (!validateAndFillErrors() || !currentItem) return;
 
   const comp = Array.from(activeMap.value.values()).map((r) => ({ sku: r.item.sku, qty: r.qty }));
   emit('update', {
-    id: String(props.currentItem.id),
+    id: String(currentItem.id),
     sku: local.sku.trim(),
     name: local.name.trim(),
     comp,
@@ -185,20 +207,17 @@ function update() {
 
 <template>
   <Modal v-model="open" :title="title">
-    <div class="form">
+    <div class="form-grid">
       <label
-        class="field"
+        class="field-col"
         :class="{ invalid: state.errors.sku && (state.touched || state.touchedField.sku) }"
       >
         <span class="field-label">Артикул</span>
-        <input
-          type="text"
+        <Input
+          :modelValue="local.sku"
+          @update:modelValue="setSku"
           placeholder="SP-001"
-          v-model="local.sku"
-          @blur="
-            markTouched('sku');
-            validateAndFillErrors();
-          "
+          @blur="markTouched('sku'); validateAndFillErrors()"
         />
         <span class="err" v-if="state.errors.sku && (state.touched || state.touchedField.sku)">
           {{ state.errors.sku }}
@@ -206,41 +225,44 @@ function update() {
       </label>
 
       <label
-        class="field"
+        class="field-col"
         :class="{ invalid: state.errors.name && (state.touched || state.touchedField.name) }"
       >
         <span class="field-label">Название</span>
-        <input
-          type="text"
+        <Input
+          :modelValue="local.name"
+          @update:modelValue="setName"
           placeholder="Samsung Galaxy S21"
-          v-model="local.name"
-          @blur="
-            markTouched('name');
-            validateAndFillErrors();
-          "
+          @blur="markTouched('name'); validateAndFillErrors()"
         />
         <span class="err" v-if="state.errors.name && (state.touched || state.touchedField.name)">
           {{ state.errors.name }}
         </span>
       </label>
 
-      <div class="field">
+      <div class="field-col">
         <div class="field-label">Компоненты</div>
-        <div class="comp-box">
-          <input
-            class="comp-search"
-            type="text"
-            placeholder="Найдите компонент по названию или SKU"
-            v-model="local.rawSearch"
-          />
 
-          <div class="chips" v-if="rows.length">
-            <span class="chip" v-for="r in rows" :key="r.item.sku">
-              <span class="chip-name">{{ r.item.name }}</span>
-              <span class="chip-qty">
-                <button type="button" class="qty-btn" @click="dec(r.item.sku)">−</button>
-                <input class="qty-input" :value="r.qty" readonly />
-                <button type="button" class="qty-btn" @click="inc(r.item.sku)">+</button>
+        <div class="comp-box">
+          <div class="comp-box__search">
+            <Input
+              :modelValue="searchRaw"
+              @update:modelValue="setRawSearch"
+              placeholder="Найдите компонент по названию или SKU"
+              class="comp-search"
+              aria-label="Поиск компонента"
+            />
+          </div>
+
+          <TransitionGroup name="list" tag="div" class="chips" v-if="rows.length">
+            <span class="chip flex flex-col " v-for="r in rows" :key="r.item.sku">
+              <span class="chip-name" :title="r.item.name">{{ r.item.name }}</span>
+              <span class="chip-qty" role="group" aria-label="Количество">
+                <QtyControl
+                  :value="r.qty"
+                  @inc="() => inc(r.item.sku)"
+                  @dec="() => dec(r.item.sku)"
+                />
               </span>
               <button
                 type="button"
@@ -251,23 +273,27 @@ function update() {
                 ✕
               </button>
             </span>
-          </div>
+          </TransitionGroup>
+
           <div class="empty" v-else>
-            <p class="p-3">
-              Выберите компоненты ниже. Минимум один компонент не обязателен, но желателен 🙂
-            </p>
+            <div class="empty-ibox"><Puzzle :size="16" color="#333333" /></div>
+            <p>Выберите компоненты ниже. Минимум один компонент — необязателен, но желателен 🙂</p>
           </div>
 
-          <div class="pool">
+          <div class="pool" role="listbox" aria-label="Список доступных компонентов">
             <button
               class="pill"
               type="button"
               v-for="value in candidates"
               :key="value.sku"
               @click="addItem(value)"
+              :title="`${value.name} · ${value.sku}`"
             >
               <span class="pill-name">{{ value.name }}</span>
-              <span class="pill-sku">{{ value.sku }}</span>
+              <span class="pill-right">
+                <span class="pill-sku">{{ value.sku }}</span>
+                <span class="pill-plus" aria-hidden="true">＋</span>
+              </span>
             </button>
           </div>
         </div>
@@ -275,251 +301,12 @@ function update() {
     </div>
 
     <template #footer>
-      <div style="display: flex; gap: 8px; justify-content: flex-end">
-        <Button variant="soft" class="mt12" @click="emit('update:modelValue', false)"
-          >Отменить</Button
-        >
-        <Button
-          variant="primary"
-          class="mt12"
-          :disabled="!canSubmit"
-          @click="isEditMode ? update() : save()"
-        >
+      <div class="footer-actions">
+        <Button variant="soft" class="" @click="emit('update:modelValue', false)">Отменить</Button>
+        <Button variant="primary" class="" :disabled="!canSubmit" @click="isEditMode ? update() : save()">
           {{ isEditMode ? '＋ Обновить' : '＋ Создать' }}
         </Button>
       </div>
     </template>
   </Modal>
 </template>
-
-<style scoped>
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-}
-.field {
-  display: grid;
-  gap: 8px;
-}
-.field.invalid input {
-  border-color: #fecaca;
-  background: #fff1f2;
-}
-.err {
-  color: #b91c1c;
-  font-size: 12px;
-}
-.field-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: #111;
-}
-.field input {
-  height: 40px;
-  padding: 0 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  background: #fff;
-  font-size: 14px;
-  color: #111827;
-  outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
-}
-.field input:hover {
-  border-color: #d1d5db;
-}
-.field input:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
-}
-.field input::placeholder {
-  color: #9ca3af;
-}
-.comp-box {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  background: #fafafb;
-}
-.comp-search {
-  width: 100%;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 8px 12px;
-  font-size: 14px;
-  background: #fff;
-  outline: none;
-}
-.comp-search:focus {
-  border-color: #9ca3af;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
-}
-.chips {
-  display: grid;
-  gap: 8px;
-}
-.chip {
-  display: grid;
-  grid-auto-flow: column;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 999px;
-  background: #eef2ff;
-  border: 1px solid #e0e7ff;
-  width: max-content;
-}
-.chip-name {
-  font-weight: 600;
-}
-.chip-qty {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 999px;
-  padding: 2px 6px;
-}
-.qty-btn {
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font-size: 16px;
-  line-height: 1;
-  padding: 2px 6px;
-}
-.qty-input {
-  width: 42px;
-  text-align: center;
-  border: none;
-  background: transparent;
-}
-.chip-x {
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  opacity: 0.7;
-  font-size: 16px;
-}
-.chip-x:hover {
-  opacity: 1;
-}
-.empty {
-  color: #6b7280;
-  font-size: 13px;
-  padding: 4px 0 2px;
-}
-.pool {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 8px;
-  max-height: 220px;
-  overflow: auto;
-  padding-right: 4px;
-}
-.pill {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: space-between;
-  padding: 8px 10px;
-  border-radius: 999px;
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  cursor: pointer;
-}
-.pill-name {
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.pill-sku {
-  font-size: 12px;
-  color: #6b7280;
-}
-
-/* 🔧 микро-адаптация для очень узких экранов */
-@media (max-width: 360px) {
-  .form {
-    gap: 12px;
-    overflow-x: hidden;
-  }
-
-  .field input {
-    height: 36px;
-  }
-
-  .comp-box {
-    padding: 8px;
-  }
-
-  /* выбранные компоненты: делаем на всю ширину */
-  .chips {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .chip {
-    /* было: width: max-content; grid-раскладка */
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    gap: 6px;
-    padding: 6px 8px;
-  }
-  .chip-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .chip-qty {
-    gap: 4px;
-    padding: 2px 4px;
-  }
-  .qty-input {
-  } /* было 42px */
-  .qty-btn {
-    padding: 0 4px;
-    font-size: 15px;
-  }
-
-  /* сетка кандидатов: одна колонка, без горизонтального скролла */
-  .pool {
-    grid-template-columns: 1fr; /* было: repeat(auto-fill, minmax(180px, 1fr)) */
-    max-height: 180px;
-    padding-right: 0;
-  }
-  .pill {
-    padding: 6px 8px;
-  }
-  .pill-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .pill-sku {
-    font-size: 11px;
-  }
-
-  /* чуть компактнее общие отступы/радиусы */
-  .field input,
-  .comp-search {
-    border-radius: 8px;
-  }
-}
-
-/* 💡 немного универсального — полезно и без медиазапроса */
-.chip-x {
-  flex: 0 0 auto;
-}
-.chip-qty {
-  flex: 0 0 auto;
-}
-</style>

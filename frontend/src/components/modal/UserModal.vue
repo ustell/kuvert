@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import Modal from './Modal.vue';
 import Button from '../Button.vue';
-import { computed, reactive, watch } from 'vue';
+import Input from '../Input.vue';
+import { watch, computed } from 'vue';
 import type { User } from '../../types/domain';
 import type { UserDTO } from '../../types/DTO';
+import { useUserForm } from '../../composables/useUserForm';
 
 type Role = { id: string; name: string };
 
-const props = defineProps<{
+const { modelValue, title, currentUser, roles } = defineProps<{
   modelValue: boolean;
   title: string;
   currentUser: User | null;
@@ -17,131 +19,46 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:modelValue', v: boolean): void;
   (e: 'create', v: Pick<UserDTO, 'name' | 'phone' | 'password' | 'roleId'>): void;
-  (e: 'update', v: Pick<UserDTO, 'name' | 'phone' | 'password' | 'id' | 'roleId'>): void;
+  (e: 'update', v: Pick<UserDTO, 'id' | 'name' | 'phone' | 'password' | 'roleId'>): void;
 }>();
 
-const open = computed({
-  get: () => props.modelValue,
-  set: (v) => emit('update:modelValue', v),
-});
+const open = computed({ get: () => modelValue, set: (v: boolean) => emit('update:modelValue', v) });
 
-const local = reactive<Pick<UserDTO, 'name' | 'password' | 'phone' | 'id' | 'roleId'>>({
-  name: '',
-  phone: '',
-  password: '',
-  id: '',
-  roleId: '',
-});
-
-const state = reactive({
-  touched: false,
-  touchedField: { name: false, phone: false, password: false, roleId: false } as Record<
-    'name' | 'phone' | 'password' | 'roleId',
-    boolean
-  >,
-  errors: { name: '', phone: '', password: '', roleId: '' } as Record<
-    'name' | 'phone' | 'password' | 'roleId',
-    string
-  >,
-});
-
-function resetForm(from?: User | null) {
-  if (from) {
-    local.name = from.name ?? '';
-    local.password = ''; // безопасней по умолчанию пустой
-    local.phone = from.phone ?? '';
-    local.id = String(from.id ?? '');
-    const currentRoleId = (from as any)?.roleId || (from as any)?.role?.id || '';
-    local.roleId = String(currentRoleId ?? '');
-  } else {
-    local.name = '';
-    local.password = '';
-    local.phone = '';
-    local.id = '';
-    local.roleId = props.roles?.[0]?.id ?? '';
-  }
-  state.touched = false;
-  state.touchedField = { name: false, phone: false, password: false, roleId: false };
-  state.errors = { name: '', phone: '', password: '', roleId: '' };
-}
+const {
+  local,
+  state,
+  canSubmit,
+  fillErrors,
+  markTouched,
+  resetForm,
+  toCreateDto,
+  toUpdateDto,
+  hasErr,
+} = useUserForm();
 
 watch(
-  () => props.currentUser,
-  (q) => resetForm(q),
+  () => currentUser,
+  (u) => resetForm(u, roles),
   { immediate: true },
 );
+
 watch(open, (v) => {
-  if (v) resetForm(props.currentUser);
+  if (v) resetForm(currentUser, roles);
 });
-
-// нормализация телефона
-const normalizePhone = (s: string) => {
-  const d = (s || '').replace(/\s+/g, '');
-  if (!d.startsWith('+') && /^\d+$/.test(d)) return '+' + d;
-  return d;
-};
-
-// валидаторы (без сайд-эффектов)
-const validName = computed(() => (local.name ?? '').trim().length >= 2);
-const validPhone = computed(() => {
-  const p = (local.phone ?? '').replace(/[^\d+]/g, '');
-  return /^\+?\d{5,20}$/.test(p);
-});
-const validPassword = computed(() => {
-  if (props.currentUser) return local.password.trim().length === 0 || local.password.length >= 3;
-  return local.password.trim().length >= 3;
-});
-const validRole = computed(() => !props.roles?.length || !!local.roleId);
-
-const canSubmit = computed(
-  () => validName.value && validPhone.value && validPassword.value && validRole.value,
-);
-
-// ошибки на блюре/сабмите
-function fillErrors() {
-  state.errors = {
-    name: validName.value ? '' : 'Укажите имя (мин. 2 символа).',
-    phone: validPhone.value ? '' : 'Телефон выглядит некорректно.',
-    password: validPassword.value
-      ? ''
-      : props.currentUser
-      ? 'Минимум 3 символа, либо оставьте пустым.'
-      : 'Минимум 3 символа.',
-    roleId: validRole.value ? '' : 'Выберите роль пользователя.',
-  };
-  return canSubmit.value;
-}
-function markTouched(field?: 'name' | 'phone' | 'password' | 'roleId') {
-  if (field) state.touchedField[field] = true;
-  state.touched = true;
-}
 
 function onCreate() {
   markTouched();
-  if (!fillErrors()) return;
-  emit('create', {
-    name: local.name.trim(),
-    phone: normalizePhone(local.phone),
-    password: local.password,
-    roleId: local.roleId || (props.roles?.[0]?.id ?? ''),
-  });
-  emit('update:modelValue', false);
-}
-function onUpdate() {
-  markTouched();
-  if (!fillErrors()) return;
-  emit('update', {
-    id: local.id,
-    name: local.name.trim(),
-    phone: normalizePhone(local.phone),
-    password: local.password, // пустая строка → не меняем на бэке
-    roleId: local.roleId || (props.roles?.[0]?.id ?? ''),
-  });
+  if (!fillErrors(!!currentUser)) return;
+  emit('create', toCreateDto());
   emit('update:modelValue', false);
 }
 
-const hasErr = (key: 'name' | 'phone' | 'password' | 'roleId') =>
-  (state.touched && state.errors[key]) || (state.touchedField[key] && state.errors[key]);
+function onUpdate() {
+  markTouched();
+  if (!fillErrors(!!currentUser)) return;
+  emit('update', toUpdateDto());
+  emit('update:modelValue', false);
+}
 </script>
 
 <template>
@@ -149,15 +66,14 @@ const hasErr = (key: 'name' | 'phone' | 'password' | 'roleId') =>
     <div class="form">
       <label class="field" :class="{ invalid: hasErr('name') }">
         <span class="lbl">Имя</span>
-        <input
-          type="text"
+        <Input
           placeholder="Иван Иванов"
-          v-model="local.name"
+          :modelValue="local.name"
+          @update:modelValue="(v) => (local.name = v)"
           @blur="
             markTouched('name');
-            fillErrors();
+            fillErrors(!!currentUser);
           "
-          :aria-invalid="!!state.errors.name"
           aria-describedby="err-name"
           autofocus
         />
@@ -166,15 +82,14 @@ const hasErr = (key: 'name' | 'phone' | 'password' | 'roleId') =>
 
       <label class="field" :class="{ invalid: hasErr('phone') }">
         <span class="lbl">Номер телефона</span>
-        <input
-          type="text"
+        <Input
           placeholder="+7777777777"
-          v-model="local.phone"
+          :modelValue="local.phone"
+          @update:modelValue="(v) => (local.phone = v)"
           @blur="
             markTouched('phone');
-            fillErrors();
+            fillErrors(!!currentUser);
           "
-          :aria-invalid="!!state.errors.phone"
           aria-describedby="err-phone"
         />
         <span v-if="hasErr('phone')" id="err-phone" class="err">{{ state.errors.phone }}</span>
@@ -182,21 +97,19 @@ const hasErr = (key: 'name' | 'phone' | 'password' | 'roleId') =>
 
       <label class="field" :class="{ invalid: hasErr('password') }">
         <span class="lbl">Пароль</span>
-        <input
+        <Input
           type="password"
           placeholder="***********"
-          v-model="local.password"
+          :modelValue="local.password"
+          @update:modelValue="(v) => (local.password = v)"
           @blur="
             markTouched('password');
-            fillErrors();
+            fillErrors(!!currentUser);
           "
-          :aria-invalid="!!state.errors.password"
           aria-describedby="err-pass"
         />
         <span v-if="hasErr('password')" id="err-pass" class="err">{{ state.errors.password }}</span>
-        <span v-if="props.currentUser" class="hint"
-          >Можно оставить пустым, чтобы не менять пароль</span
-        >
+        <span v-if="currentUser" class="hint">Можно оставить пустым, чтобы не менять пароль</span>
       </label>
 
       <label class="field" :class="{ invalid: hasErr('roleId') }">
@@ -205,7 +118,7 @@ const hasErr = (key: 'name' | 'phone' | 'password' | 'roleId') =>
           v-model="local.roleId"
           @blur="
             markTouched('roleId');
-            fillErrors();
+            fillErrors(!!currentUser);
           "
           :disabled="!roles?.length"
           :aria-invalid="!!state.errors.roleId"
@@ -222,16 +135,16 @@ const hasErr = (key: 'name' | 'phone' | 'password' | 'roleId') =>
 
     <template #footer>
       <div class="footer">
-        <Button variant="soft" class="mt12" @click="emit('update:modelValue', false)"
+        <Button variant="soft" class="" @click="emit('update:modelValue', false)"
           >Отменить</Button
         >
         <Button
           variant="primary"
-          class="mt12"
+          class=""
           :disabled="!canSubmit"
-          @click="props.currentUser ? onUpdate() : onCreate()"
+          @click="currentUser ? onUpdate() : onCreate()"
         >
-          {{ props.currentUser ? '＋ Редактировать' : '＋ Создать' }}
+          {{ currentUser ? '＋ Редактировать' : '＋ Создать' }}
         </Button>
       </div>
     </template>

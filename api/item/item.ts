@@ -6,18 +6,51 @@ export default async function item(req: VercelRequest, res: VercelResponse) {
   switch (req.method) {
     case 'GET':
       try {
-        const items = await prisma.item.findMany({
-          include: {
-            recipesOf: {
-              include: {
-                componentItem: true,
-              },
-            },
-          },
-        });
+        // Support query params: ?page=1&limit=20, ?all=true, ?id=... , ?include=recipes
+        const url = new URL(req.url ?? '', 'http://localhost');
+        const q = url.searchParams;
+        const all = (q.get('all') || '').toLowerCase() === 'true';
+        const include = (q.get('include') || '').toLowerCase();
+        const id = q.get('id');
+        // If caller didn't provide explicit pagination parameters, return all items by default
+        const page = Math.max(1, Number(q.get('page')) || 1);
+        const rawLimit = q.get('limit');
+        const limit = rawLimit ? Math.max(1, Math.min(100, Number(rawLimit))) : null;
 
-        return res.status(200).json({ items });
-      } catch (error) {
+        // If id provided -> return single item (include recipes if requested)
+        if (id) {
+          const item = await prisma.item.findUnique({
+            where: { id },
+            include:
+              include === 'recipes'
+                ? { recipesOf: { include: { componentItem: true } } }
+                : undefined,
+          });
+          if (!item) return res.status(404).json({ error: 'Item not found' });
+          return res.status(200).json({ data: item });
+        }
+
+        const baseSelect: any =
+          include === 'recipes'
+            ? { include: { recipesOf: { include: { componentItem: true } } } }
+            : { select: { id: true, sku: true, name: true } };
+
+        // If caller requested all explicitly or omitted `limit` (rawLimit === null), return full list
+        if (all || limit === null) {
+          const items = await prisma.item.findMany(baseSelect);
+          // avoid expensive separate count() - use returned length
+          return res
+            .status(200)
+            .json({ data: items, meta: { total: items.length, page: 1, limit: items.length } });
+        }
+
+        // paginated path (limit is non-null)
+        const skip = (page - 1) * (limit as number);
+        const items = await prisma.item.findMany({ ...baseSelect, skip, take: limit as number });
+        // avoid separate count() to speed up response; client infers hasMore from payload length
+        return res.status(200).json({ data: items, meta: { page, limit } });
+      } catch (error: any) {
+        console.error('GET /api/items failed:', error?.message ?? error);
         return res.status(500).json({ error: 'Server error' });
       }
     case 'POST': {

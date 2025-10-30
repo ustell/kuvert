@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import {Timer, Package} from 'lucide-vue-next';
+
 import { computed } from 'vue';
 import { storeToRefs } from 'pinia';
 import Card from '../components/Card.vue';
@@ -15,7 +17,7 @@ const fmt = useFormat('ru-RU');
 const router = useRouter();
 const auth = useAuth();
 const trans = useTrans();
-const { users: me } = storeToRefs(auth);
+const { users: me, isFetchingMe } = storeToRefs(auth);
 const { transfer, loading } = storeToRefs(trans);
 
 const inventories = computed<Inventory[]>(() => me.value?.inventories ?? []);
@@ -32,6 +34,16 @@ const onLogout = async () => {
   await auth.logout(); // или auth.logout(true) если бэк-logout не добавляешь
   router.replace('/login'); // адаптируй под свой маршрут
 };
+
+// ensure we fetch transfers targeted to current user
+import { onMounted, watch } from 'vue';
+const tryLoadIncoming = async () => {
+  const id = String(me.value?.id || '');
+  if (!id) return;
+  await trans.fetchItems({ reset: true, mine: 'to', userId: id, status: 'all' });
+};
+onMounted(tryLoadIncoming);
+watch(() => me.value?.id, tryLoadIncoming);
 </script>
 
 <template>
@@ -46,7 +58,7 @@ const onLogout = async () => {
     <div class="grid-2 gap-4">
       <Card padded>
         <div class="stat">
-          <div class="stat-ic">⏱️</div>
+          <div class="stat-ic"><Timer :size="16" color="#333333" /></div>
           <div class="stat-num">{{ pendingIncomingCount }}</div>
           <div>Ожидают подтверждения</div>
         </div>
@@ -54,7 +66,7 @@ const onLogout = async () => {
 
       <Card padded>
         <div class="stat">
-          <div class="stat-ic">📦</div>
+          <div class="stat-ic"><Package :size="16" color="#333333" /></div>
           <div class="stat-num">{{ inventoryCount }} товара</div>
           <div>В вашем инвентаре</div>
         </div>
@@ -77,16 +89,12 @@ const onLogout = async () => {
           class="transfer-preview border-b border-gray-100 py-2"
         >
           <div class="row-top">
-            <span>От: {{ t.fromUser?.name ?? '—' }} → К: {{ t.toUser?.name ?? '—' }}</span>
+            <span>От: {{ t.fromUser?.name ?? '—' }} </span>
             <Badge :kind="t.status">{{ t.status }}</Badge>
-            <span>{{ fmt.date(t.createdAt) }}</span>
+            <span>{{ fmt.date((t as any).createdAt ?? (t as any).dateCreated) }}</span>
           </div>
 
           <div class="row-sub">{{ fmt.units(t.units) }} — {{ t.item?.name ?? 'Без названия' }}</div>
-
-          <div v-if="t.comment" class="text-xs text-gray-500 mt-1">
-            Комментарий: {{ t.comment }}
-          </div>
         </div>
       </template>
     </Card>
@@ -94,21 +102,27 @@ const onLogout = async () => {
     <Card padded>
       <div class="card-title">Мой инвентарь</div>
 
-      <div v-if="inventories.length === 0" class="text-center text-gray-500 py-4 text-sm">
-        Инвентарь пуст — добавьте товары или обновите данные.
+      <div v-if="isFetchingMe" class="text-center text-gray-500 py-4 text-sm">
+        Загрузка инвентаря…
       </div>
 
-      <ListItem v-for="inv in inventories" :key="inv.id ?? inv.item?.id ?? inv.itemId">
-        <template #default>
-          <div class="flex flex-col">
-            <span class="font-medium text-sm">{{ inv.item?.name ?? '—' }}</span>
-            <span class="text-xs text-gray-500">SKU: {{ inv.item?.sku ?? '—' }}</span>
-          </div>
-        </template>
-        <template #right>
-          <span class="pill">{{ fmt.units(inv.units) }}</span>
-        </template>
-      </ListItem>
+      <template v-else>
+        <div v-if="inventories.length === 0" class="text-center text-gray-500 py-4 text-sm">
+          Инвентарь пуст — добавьте товары или обновите данные.
+        </div>
+
+        <ListItem v-for="inv in inventories" :key="inv.id ?? inv.item?.id ?? inv.itemId">
+          <template #default>
+            <div class="flex flex-col">
+              <span class="font-medium text-sm">{{ inv.item?.name ?? '—' }}</span>
+              <span class="text-xs text-gray-500">SKU: {{ inv.item?.sku ?? '—' }}</span>
+            </div>
+          </template>
+          <template #right>
+            <span class="pill">{{ fmt.units(inv.units) }}</span>
+          </template>
+        </ListItem>
+      </template>
     </Card>
   </div>
 </template>

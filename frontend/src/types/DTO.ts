@@ -6,7 +6,7 @@ export type UserDTO = {
   roleId?: number;
   id?: string;
 };
-export type Result<T> = { ok: true; data: any } | { ok: false; error: string };
+export type Result = { ok: true; data: any } | { ok: false; error: string };
 
 // Базовые сущности
 export type UUID = string;

@@ -1,14 +1,16 @@
 <script setup lang="ts">
+import {Plane} from 'lucide-vue-next';
+
 import Button from '../components/Button.vue';
-import TransferModal from '../components/modal/TransferModal.vue';
-import TransferDetailsCard from '../components/transfer/TransferDetailsCard.vue';
-import TransferItemsCard from '../components/transfer/TransferItemsCard.vue';
+import TransferForm from '../components/transfer/TransferForm.vue';
+
 import TransferRecentCard from '../components/transfer/TransferRecentCard.vue';
 
 import { computed, reactive, ref, onMounted, watch, onBeforeUnmount } from 'vue';
 import type { Inventory } from '../types/domain';
 import { useUsers, useAuth } from '../stores';
 import { useTrans } from '../stores/transfer';
+import { useItem } from '../stores/item';
 import { useAction } from '../composables/useAction';
 import { useFormat } from '../composables/useFormat';
 import { useNotify } from '../stores/notify';
@@ -29,6 +31,8 @@ const trans = useTrans();
 const notify = useNotify();
 const abortCtl = new AbortController();
 
+const items = useItem();
+
 const currentUser = computed(() => auth.users);
 const toUserId = ref<string | null>(null);
 const allowedTargets = computed(() => (auth.users as any)?.allowedTargets ?? []);
@@ -37,26 +41,6 @@ const state = reactive<State>({ open: false, userInv: [], error: null, touched: 
 const toUser = computed(
   () => (users.users ?? []).find((u) => String(u.id) === String(toUserId.value ?? '')) ?? null,
 );
-
-function addSelectedItem(inv: Inventory) {
-  state.touched = true;
-  const exists = state.userInv.find((x) => x.id === inv.id);
-  if (exists) {
-    const next = Number(exists.qty || 0) + 1;
-    /*************  ✨ Windsurf Command ⭐  *************/
-    /**
- * Pick a message from an object or return null if object is falsy.
- * If object is a string, return it.
- * If object has a status property with value 'INSUFFICIENT_STOCK_AND_NO_RECIPE',
-
- * Otherwise, return a JSON string representation of the object or its string value.
- * @param {any} x - object to pick a message from
- * @returns {string|null} - picked message or null
- */
-  } else {
-    state.userInv.push({ ...(inv as Inventory), qty: 1 });
-  }
-}
 
 function formatServerIssue(raw: any): string | null {
   if (!raw) return null;
@@ -115,7 +99,6 @@ function showErrors(msgs: string[]) {
   if (unique.length === 0) unique.push('Произошла ошибка');
 
   unique.forEach((msg, i) => {
-    // первый — липкий, остальные авто
     notify.error(msg, i === 0 ? 0 : 5000);
   });
   return unique;
@@ -210,7 +193,7 @@ async function save() {
     return;
   }
 
-  const items = state.userInv.map((i) => ({ id: i.id, itemId: i.itemId, qty: i.qty }));
+  const items = state.userInv.map((i) => ({ itemId: String(i.itemId ?? i.id ?? ''), qty: i.qty }));
   const qtys = state.userInv.map((i) => i.qty);
 
   const res = await act(
@@ -225,9 +208,9 @@ async function save() {
     notify.success('Передача создана', 2500);
     state.userInv = [];
     toUserId.value = null;
-    if (!res.data?.length) {
-      await act(() => trans.fetchItems(abortCtl.signal)).catch(() => {});
-    }
+    // refresh outgoing list explicitly (mine='from') to reflect newly created transfers
+    const id = String(currentUser.value?.id || '');
+    await trans.fetchItems({ reset: true, mine: 'from', userId: id, status: 'all', signal: abortCtl.signal }).catch(() => {});
     return;
   }
 
@@ -236,8 +219,22 @@ async function save() {
 }
 
 onMounted(() => {
-  if (!trans.hasData) trans.fetchItems(abortCtl.signal).catch(console.error);
+  const id = String(currentUser.value?.id || '');
+  // Always load outgoing transfers for this page. Bootstrap may have filled incoming (mine='to'),
+  // so relying on hasData could skip needed fetch.
+  trans
+    .fetchItems({ reset: true, mine: 'from', userId: id, status: 'all', signal: abortCtl.signal })
+    .catch(console.error);
+  if (!items.isLoaded) items.fetchItems().catch(() => {});
 });
+
+watch(
+  () => currentUser.value?.id,
+  (nv) => {
+    const id = String(nv || '');
+    if (id) trans.fetchItems({ reset: true, mine: 'from', userId: id, status: 'all', signal: abortCtl.signal }).catch(() => {});
+  },
+);
 onBeforeUnmount(() => abortCtl.abort());
 
 const myRecent = computed(() =>
@@ -249,37 +246,35 @@ const myRecent = computed(() =>
   <div class="container">
     <div class="page-head"><div class="title-18">Создать передачу</div></div>
 
-    <TransferDetailsCard
+    <TransferForm
+      v-model="state.userInv"
+      v-model:toUserId="(toUserId as any)"
       :current-user-name="currentUser?.name"
       :allowed-targets="allowedTargets"
-      v-model="toUserId"
       :disabled="trans.creating"
       :touched="state.touched"
+      :items="items.items"
     />
 
-    <TransferItemsCard
-      v-model="state.userInv"
-      :disabled="trans.creating"
-      @add-request="state.open = true"
-    />
+<Button
+  variant="primary"
+  :full="true"
+  class="mt-3 btn-cta"
+  @click="save"
+  :disabled="!canSave"
+  :loading="trans.creating"
+>
+  <span class="cta" :class="{ 'is-loading': trans.creating }">
+    <Plane v-if="!trans.creating" :size="18" class="cta-icon" />
+    <svg v-else viewBox="0 0 24 24" class="spinner" aria-hidden="true">
+      <circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="3" opacity=".25"/>
+      <path d="M12 2.5a9.5 9.5 0 0 1 9.5 9.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+    </svg>
 
-    <TransferModal
-      v-model="state.open"
-      title="Проверить позиции"
-      :userInv="currentUser?.inventories"
-      @select="addSelectedItem"
-    />
+    <span class="cta-text">Создать перевод</span>
+  </span>
+</Button>
 
-    <Button
-      variant="primary"
-      :full="true"
-      class="mt-3"
-      @click="save"
-      :disabled="!canSave"
-      :aria-busy="trans.creating"
-    >
-      <template v-if="trans.creating">⏳</template><template v-else>✈</template> Создать перевод
-    </Button>
 
     <TransferRecentCard
       :items="myRecent"

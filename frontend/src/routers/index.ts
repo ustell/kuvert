@@ -1,12 +1,14 @@
 // src/router/index.ts
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
-import DashboardPage from '../views/DashboardPage.vue';
-import LoginPage from '../views/LoginPage.vue';
-import AcceptPage from '../views/AcceptPage.vue';
-import CreatePage from '../views/CreatePage.vue';
-import AdminPage from '../views/AdminPage.vue';
+// lazy-load views to reduce initial bundle size
+const DashboardPage = () => import('../views/DashboardPage.vue');
+const LoginPage = () => import('../views/LoginPage.vue');
+const AcceptPage = () => import('../views/AcceptPage.vue');
+const CreatePage = () => import('../views/CreatePage.vue');
+const AdminPage = () => import('../views/AdminPage.vue');
 import { useAuth } from '../stores/auth';
 import { bootReady } from '../services/bootGate'; // <-- ждём, прежде чем что-то решать
+import { boot } from '../services/boot';
 
 const routes: RouteRecordRaw[] = [
   { path: '/', component: DashboardPage, meta: { name: 'Dashboard', auth: true } },
@@ -36,8 +38,32 @@ router.beforeEach(async (to) => {
   if (requiresAuth && !auth.users) {
     return { path: '/login', query: { redirect: to.fullPath } };
   }
-  if (!requiresAuth && auth.users) {
-    return { path: '/' };
+  // If already authenticated and opening /login, redirect by role
+  if (!requiresAuth && auth.users && isLogin) {
+    const u: any = auth.users;
+    const isAdmin = !!(
+      u?.allowedTargets?.includes?.('admin') ||
+      (u?.role?.name && String(u.role.name).toLowerCase() === 'admin')
+    );
+    return { path: isAdmin ? '/admin' : '/' };
+  }
+
+  // Restrict /admin for non-admin users
+  if (to.path === '/admin' && auth.users) {
+    const u: any = auth.users;
+    const isAdmin = !!(
+      u?.allowedTargets?.includes?.('admin') ||
+      (u?.role?.name && String(u.role.name).toLowerCase() === 'admin')
+    );
+    if (!isAdmin) return { path: '/' };
+    // Админ: не ждём, грузим данные в фоне
+    void boot({ with: { me: false, users: true, items: true, trans: true } });
+  }
+
+  // Обычные защищённые страницы: не блокируем UI, но прогреваем данные в фоне
+  if (requiresAuth && auth.users && to.path !== '/admin') {
+    // запустим загрузку items+trans без ожидания
+    void boot({ with: { me: false, users: false, items: true, trans: true } });
   }
   return true;
 });

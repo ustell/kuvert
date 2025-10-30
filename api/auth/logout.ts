@@ -1,7 +1,5 @@
-// api/auth/logout.ts
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// тот же CORS-хелпер, что и в login
 function setCors(res: VercelResponse) {
   const origin = process.env.CORS_ORIGIN ?? '';
   if (origin) {

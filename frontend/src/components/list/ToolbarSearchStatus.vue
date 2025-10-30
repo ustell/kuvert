@@ -1,6 +1,6 @@
 <script setup lang="ts">
 type Status = 'all' | 'pending' | 'accepted' | 'rejected';
-const props = defineProps<{
+const { modelValue, status, disabled } = defineProps<{
   modelValue: string; // поиск
   status: Status; // текущий статус
   disabled?: boolean;
@@ -11,16 +11,15 @@ const emit = defineEmits<{
   (e: 'refresh'): void;
 }>();
 import Button from '../Button.vue';
+import Input from '../Input.vue';
 </script>
 
 <template>
-  <div class="flex flex-col items-stretch gap-2">
-    <input
-      :value="modelValue"
-      @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
-      type="text"
+  <div class="flex flex-col items-stretch gap-2 mt-2">
+    <Input
+      :modelValue="modelValue"
+      @update:modelValue="(v) => emit('update:modelValue', v)"
       placeholder="Поиск…"
-      class="h-9 w-full rounded-md border border-gray-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-black/5"
     />
     <select
       :value="status"

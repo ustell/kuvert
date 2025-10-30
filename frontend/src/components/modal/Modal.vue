@@ -1,14 +1,21 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, watch } from 'vue';
+import { onBeforeUnmount, onMounted, watch, ref, nextTick } from 'vue';
 
 defineOptions({ inheritAttrs: false });
 
 const props = defineProps({
   modelValue: { type: Boolean, required: true },
   title: { type: String, default: '' },
+  description: { type: String, default: '' },
 });
 
 const emit = defineEmits(['update:modelValue', 'close']);
+
+const modalRef = ref<HTMLElement | null>(null);
+const uid = Math.random().toString(36).slice(2, 9);
+const titleId = `modal-title-${uid}`;
+const descId = `modal-desc-${uid}`;
+let previousActive: Element | null = null;
 
 const close = () => {
   emit('update:modelValue', false);
@@ -16,7 +23,35 @@ const close = () => {
 };
 
 const onKeyDown = (e: KeyboardEvent) => {
-  if (e.key === 'Escape') close();
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    close();
+    return;
+  }
+
+  // simple focus trap
+  if (e.key === 'Tab' && modalRef.value) {
+    const focusable = modalRef.value.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])',
+    );
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (!first || !last) return;
+    const active = document.activeElement as HTMLElement | null;
+
+    if (e.shiftKey) {
+      if (active === first || !modalRef.value.contains(active)) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else {
+      if (active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  }
 };
 
 onMounted(() => window.addEventListener('keydown', onKeyDown));
@@ -25,10 +60,26 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown));
 // блокируем прокрутку body, когда модалка открыта
 watch(
   () => props.modelValue,
-  (v) => {
+  async (v) => {
     const prev = document.body.style.overflow;
-    if (v) document.body.style.overflow = 'hidden';
-    else document.body.style.overflow = '';
+    if (v) {
+      previousActive = document.activeElement;
+      document.body.style.overflow = 'hidden';
+      await nextTick();
+      // autofocus first focusable element or close button
+      const root = modalRef.value as HTMLElement | null;
+      if (root) {
+        const first = root.querySelector<HTMLElement>(
+          'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        );
+        (first ?? root).focus();
+      }
+    } else {
+      document.body.style.overflow = '';
+      try {
+        (previousActive as HTMLElement | null)?.focus?.();
+      } catch {}
+    }
     // страховка при unmount
     onBeforeUnmount(() => (document.body.style.overflow = prev));
   },
@@ -43,17 +94,20 @@ watch(
       role="dialog"
       aria-modal="true"
       :aria-label="title"
+      :aria-labelledby="title ? titleId : undefined"
+      :aria-describedby="description ? descId : undefined"
     >
       <div class="modal-backdrop" @click.self="close" />
 
-      <div class="modal-window" role="document">
+      <div ref="modalRef" class="modal-window" role="document" tabindex="-1">
         <header class="modal-head">
-          <h3 class="modal-title">{{ title }}</h3>
+          <h3 :id="titleId" class="modal-title">{{ title }}</h3>
           <button class="modal-x" @click="close" aria-label="Закрыть">✕</button>
         </header>
 
         <main class="modal-body">
           <slot />
+          <p v-if="description" :id="descId" class="visually-hidden">{{ description }}</p>
         </main>
 
         <footer class="modal-foot">
@@ -119,5 +173,14 @@ watch(
   border: 0;
   cursor: pointer;
   font-size: 18px;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  height: 1px;
+  width: 1px;
+  overflow: hidden;
+  clip: rect(1px, 1px, 1px, 1px);
+  white-space: nowrap;
 }
 </style>

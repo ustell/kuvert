@@ -10,6 +10,7 @@ const Env = z.object({
   AUTH_SECRET: z.string().min(32),
   COOKIE_NAME: z.string().default("session"),
   COOKIE_MAX_DAYS: z.coerce.number().default(7),
+  PORT: z.coerce.number().default(3000),
 });
 
 export const env = Env.parse(process.env);

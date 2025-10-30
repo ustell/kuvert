@@ -20,9 +20,9 @@ withDefaults(
   <div class="row mt-4 flex-col" :class="{ clickable: clickable }">
     <div class="avatar"><slot name="avatar">🗂</slot></div>
 
-    <div class="main">
+    <div class="main flex flex-col items-center">
       <div class="titleline">
-        <div class="title">
+        <div class="title items-center">
           <span class="t">{{ title }}</span>
           <span v-if="badge" class="badge" :class="badge.kind">{{ badge.text }}</span>
         </div>

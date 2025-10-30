@@ -2,7 +2,9 @@
   <span class="bdg" :class="kind"><slot /></span>
 </template>
 <script setup lang="ts">
-defineProps<{ kind?: 'muted' | 'pending' | 'success' | 'danger' | 'primary' }>();
+defineProps<{
+  kind?: 'muted' | 'pending' | 'accepted' | 'rejected' | 'success' | 'danger' | 'primary';
+}>();
 </script>
 <style scoped>
 .bdg {

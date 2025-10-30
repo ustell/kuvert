@@ -28,7 +28,8 @@ const incomingPending = computed(() =>
 );
 
 const load = async () => {
-  await act(() => trans.fetchItems(abortCtl.signal), {
+  const id = String(uid.value || '');
+  await act(() => trans.fetchItems({ reset: true, mine: 'to', userId: id, status: 'all', signal: abortCtl.signal }), {
     messages: { error: trans.error ?? 'Не удалось загрузить переводы' },
   });
 };
@@ -39,8 +40,9 @@ const accept = (id: string) =>
       messages: { success: 'Перевод подтверждён', error: 'Не удалось подтвердить' },
       ok: (x: any) => x?.ok !== false,
     });
-    await trans.fetchItems(abortCtl.signal).catch(() => {});
-    await auth.me().catch(() => {});
+    // `trans.accept` already updates local state and triggers related refreshes
+    // (auth.me and items.fetchItems) internally. Avoid double-fetch here to
+    // prevent extra re-renders / flicker.
     if (!(r as any)?.ok) notify.error(trans.error ?? 'Не удалось подтвердить');
     else notify.success('Подтверждено');
   });
@@ -51,8 +53,8 @@ const reject = (id: string) =>
       messages: { success: 'Перевод отклонён', error: 'Не удалось отклонить' },
       ok: (x: any) => x?.ok !== false,
     });
-    await trans.fetchItems(abortCtl.signal).catch(() => {});
-    await auth.me().catch(() => {});
+    // `trans.reject` already updates local state and triggers related refreshes
+    // internally. Avoid duplicate refresh to prevent UI flicker.
     if (!(r as any)?.ok) notify.error(trans.error ?? 'Не удалось отклонить');
     else notify.info('Отклонено');
   });

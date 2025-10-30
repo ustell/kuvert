@@ -1,7 +1,10 @@
 <script setup lang="ts">
+import {Package} from 'lucide-vue-next';
+
 import RowCard from '../../components/RowCard.vue';
 import IconBtn from '../../components/IconBtn.vue';
 import Button from '../../components/Button.vue';
+import SearchList from '../../components/SearchList.vue';
 import GoodModal from '../../components/modal/GoodModal.vue';
 import LoadingList from '../../components/common/LoadingList.vue';
 import EmptyState from '../../components/common/EmptyState.vue';
@@ -21,6 +24,7 @@ const open = ref(false);
 const confirmDelete = useConfirmDelete('Удалить товар? Это действие необратимо.');
 
 onMounted(() => {
+  // load items (no client-side limit by default)
   store.fetchItems().catch(console.error);
 });
 
@@ -33,13 +37,17 @@ async function delGoods(id?: string) {
     }),
   );
 }
-async function addGood(p: { sku: string; name: string; comp: Record<string, unknown> }) {
+async function addGood(p: { sku: string; name: string; comp: { sku: string; qty: number }[] }) {
   await act(() => store.createItem(p.sku, p.name, p.comp), {
     messages: { success: 'Товар создан', error: 'Ошибка при добавлении товара' },
   });
   open.value = false;
 }
-async function editGood(p: { sku: string; name: string; comp: Record<string, unknown> }) {
+async function editGood(p: {
+  sku: string;
+  name: string;
+  comp: { id?: string; sku?: string; qty?: number }[];
+}) {
   const id = editItem.value?.id;
   if (!id) return;
   await act(() => store.updateItem(id, p.sku, p.name, p.comp), {
@@ -56,34 +64,41 @@ const selectItem = (g: Item) => {
 
 <template>
   <div>
-    <Button variant="primary" :full="true" class="mt12" @click="open = true"
+    <Button variant="primary" :full="true" class="" @click="open = true"
       >＋ Добавить новый элемент</Button
     >
 
-    <LoadingList v-if="store.loading" />
-    <EmptyState v-else-if="!store.items?.length" text="Пока нет товаров" />
+    <SearchList
+      :items="store.items ?? []"
+      :loading="store.loading"
+      placeholder="Поиск по названию или SKU"
+    >
+      <template #loading>
+        <LoadingList />
+      </template>
 
-    <template v-else>
-      <RowCard
-        v-for="g in store.items"
-        :key="g.id ?? g.sku"
-        :title="g.name"
-        :subtitle="`SKU: ${g.sku}`"
-      >
-        <template #avatar>📦</template>
-        <template #actions>
-          <IconBtn title="Редактировать" @click="selectItem(g)">✎</IconBtn>
-          <IconBtn
-            :disabled="busy.has(g.id)"
-            title="Удалить"
-            variant="danger"
-            @click="delGoods(g.id)"
-          >
-            <template v-if="busy.has(g.id)">⏳</template><template v-else>🗑</template>
-          </IconBtn>
-        </template>
-      </RowCard>
-    </template>
+      <template #default="{ items }">
+        <EmptyState v-if="!items.length" text="Ничего не найдено" />
+        <div v-else>
+          <template v-for="g in items" :key="g.id ?? g.sku">
+            <RowCard :title="g.name" :subtitle="`SKU: ${g.sku}`">
+              <template #avatar><Package :size="16" color="#333333" /></template>
+              <template #actions>
+                <IconBtn title="Редактировать" @click="selectItem(g)">✎</IconBtn>
+                <IconBtn
+                  :disabled="busy.has(g.id)"
+                  title="Удалить"
+                  variant="danger"
+                  @click="delGoods(g.id)"
+                >
+                  <template v-if="busy.has(g.id)">⏳</template><template v-else>🗑</template>
+                </IconBtn>
+              </template>
+            </RowCard>
+          </template>
+        </div>
+      </template>
+    </SearchList>
 
     <GoodModal
       v-model="open"

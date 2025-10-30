@@ -4,7 +4,7 @@ import Badge from '../../components/Badge.vue';
 import Button from '../../components/Button.vue';
 import ListItem from '../../components/ListItem.vue';
 
-const props = defineProps<{
+const { value, busy, formatDate, formatUnits } = defineProps<{
   value: any; // один transfer
   busy: boolean;
   formatDate: (d: any) => string;
@@ -16,11 +16,12 @@ const emit = defineEmits<{ (e: 'accept'): void; (e: 'reject'): void }>();
 <template>
   <Card padded>
     <div class="row-between mb8">
-      <div class="title-16">Перевод #{{ value.id }}</div>
+      <div class="title-16">
+        От: {{ value.fromUser?.name ?? value.fromUserId ?? '—' }} • {{ formatDate(value.createdAt) }}
+      </div>
       <Badge :kind="value.status">{{ value.status }}</Badge>
     </div>
     <div class="mb12">
-      От: {{ value.fromUser?.name ?? value.fromUserId ?? '—' }} • {{ formatDate(value.createdAt) }}
     </div>
 
     <ListItem>
@@ -33,12 +34,8 @@ const emit = defineEmits<{ (e: 'accept'): void; (e: 'reject'): void }>();
     <div v-if="value.comment" class="small mb12">Комментарий: {{ value.comment }}</div>
 
     <div class="btn-row">
-      <Button variant="primary" :disabled="busy" :aria-busy="busy" @click="emit('accept')">
-        <template v-if="busy">⏳</template><template v-else>✓</template>Подтвердить
-      </Button>
-      <Button variant="danger" :disabled="busy" :aria-busy="busy" @click="emit('reject')">
-        <template v-if="busy">⏳</template><template v-else>✕</template>Отказать
-      </Button>
+      <Button variant="primary" :loading="busy" @click="emit('accept')">✓ Подтвердить</Button>
+      <Button variant="danger" :loading="busy" @click="emit('reject')">✕ Отказать</Button>
     </div>
   </Card>
 </template>

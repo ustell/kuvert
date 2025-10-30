@@ -11,34 +11,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const cookieName = process.env.COOKIE_NAME || 'session';
-    const token = parseCookie(req, cookieName);
+
+    // берём токен либо из cookie, либо из Authorization: Bearer
+    const bearer = req.headers.authorization?.replace(/^Bearer\s+/i, '');
+    const token = parseCookie(req, cookieName) || bearer;
     if (!token) return res.status(401).json({ error: 'Не авторизован' });
 
-    // user со всем, что тебе нужно в UI
     const user = await verifyToken(token);
     if (!user) return res.status(401).json({ error: 'Пользователь не найден' });
 
-    // роль пользователя + кого он МОЖЕТ таргетить
-    const role = await prisma.role.findUnique({
-      where: { id: user.roleId! },
-      select: {
-        id: true,
-        name: true,
-        fromRules: { select: { toRoleId: true } }, // важное место
-      },
-    });
+    let role = null;
+    let allowedRoleIds: string[] = [];
 
-    const allowedRoleIds = (role?.fromRules ?? []).map((r) => r.toRoleId).filter(Boolean);
+    // Получаем роль и правила только если у пользователя есть roleId
+    if (user.roleId) {
+      role = await prisma.role.findUnique({
+        where: { id: user.roleId },
+        select: {
+          id: true,
+          name: true,
+          fromRules: { select: { toRoleId: true } },
+        },
+      });
 
-    let allowedTargets: Array<{
-      id: string;
-      name: string;
-      phone: string | null;
-      roleId: string | null;
-      role: { id: string; name: string } | null;
-    }> = [];
+      allowedRoleIds = (role?.fromRules ?? []).map((r) => r.toRoleId).filter(Boolean);
+      
+      // Логирование для отладки
+      console.log('[ME] User:', user.id, 'Role:', role?.name, 'AllowedRoleIds:', allowedRoleIds);
+    } else {
+      console.log('[ME] User:', user.id, 'has no roleId');
+    }
 
-    if (allowedRoleIds.length) {
+    let allowedTargets:
+      | Array<{
+          id: string;
+          name: string;
+          phone: string | null;
+          roleId: string | null;
+          role: { id: string; name: string } | null;
+        }>
+      | [] = [];
+
+    if (allowedRoleIds.length > 0) {
       allowedTargets = await prisma.user.findMany({
         where: {
           isActive: true,
@@ -54,16 +68,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           role: { select: { id: true, name: true } },
         },
       });
+      console.log('[ME] Found allowedTargets:', allowedTargets.length);
     }
 
-    // можно добавить поле прямо в ответ, не ломая старый формат:
+
     return res.status(200).json({
       data: {
         user: {
           ...user,
-          role: role ? { id: role.id, name: role.name } : user.role, // чтобы точно было
+          role: role ? { id: role.id, name: role.name } : null,
         },
-        allowedTargets, // ← вот оно
+        allowedTargets,
       },
     });
   } catch (e) {

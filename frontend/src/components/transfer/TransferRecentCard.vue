@@ -2,7 +2,7 @@
 import Card from '../../components/Card.vue';
 import Badge from '../../components/Badge.vue';
 
-const props = defineProps<{
+const { items, loading, formatDate, formatUnits } = defineProps<{
   items: Array<any>;
   loading?: boolean;
   formatDate: (d: any) => string;
@@ -21,16 +21,22 @@ const props = defineProps<{
       <div class="small">Пока нет исходящих переводов.</div>
     </template>
     <template v-else>
-      <div v-for="v in items" :key="v.id" class="border-b border-gray-100 py-2">
-        <div class="row-top">
-          <div class="flex flex-col">
-            <span>От: {{ v.fromUser?.name ?? v.fromUserId }}</span>
-            <span>К: {{ v.toUser?.name ?? v.toUserId }}</span>
+      <div>
+        <template v-for="v in items" :key="v.id">
+          <div class="border-b border-gray-100 py-2">
+            <div class="row-top">
+              <div class="flex flex-col">
+                <span>От: {{ v.fromUser?.name ?? v.fromUserId }}</span>
+                <span>К: {{ v.toUser?.name ?? v.toUserId }}</span>
+              </div>
+              <Badge :kind="v.status">{{ v.status }}</Badge>
+              <span>{{ formatDate(v.createdAt) }}</span>
+            </div>
+            <div class="row-sub">
+              {{ v.item?.name ?? 'Без названия' }} × {{ formatUnits(v.units) }}
+            </div>
           </div>
-          <Badge :kind="v.status">{{ v.status }}</Badge>
-          <span>{{ formatDate(v.createdAt) }}</span>
-        </div>
-        <div class="row-sub">{{ v.item?.name ?? 'Без названия' }} × {{ formatUnits(v.units) }}</div>
+        </template>
       </div>
     </template>
   </Card>

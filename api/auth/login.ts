@@ -5,7 +5,6 @@ import { prisma } from '../lib/prisma';
 import bcrypt from 'bcryptjs';
 import { createToken } from '../lib/token';
 
-// CORS helper (для dev, когда фронт на другом порту)
 function setCors(res: VercelResponse) {
   const origin = process.env.CORS_ORIGIN ?? '';
   if (origin) {
@@ -37,7 +36,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         phone: true,
         password: true,
         isActive: true,
-        inventories: true,
+        inventories: {
+          select: {
+            id: true,
+            units: true,
+            item: { select: { id: true, name: true, sku: true } },
+          },
+        },
         role: true,
       },
     });
@@ -45,8 +50,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(401).json({ error: 'Неверные учетные данные' });
     }
 
-    const hash = bcrypt.compare(password, user.password);
-    if (!hash) {
+    const isValid = await bcrypt.compare(password, user.password);
+    if (!isValid) {
       return res.status(401).json({ error: 'Неверные учетные данные' });
     }
     const secret = new TextEncoder().encode(process.env.AUTH_SECRET || '');
@@ -64,12 +69,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     parts.push(`Max-Age=${maxAge}`);
     res.setHeader('Set-Cookie', parts.join('; '));
     const softUser = {
+      id: user.id,
       name: user.name,
       phone: user.phone,
-      role: user.role,
+      role: user.role ? { id: user.role.id, name: user.role.name } : null,
+      inventories: Array.isArray(user.inventories)
+        ? user.inventories.map((inv: any) => ({
+            id: inv.id,
+            units: inv.units,
+            item: inv.item ? { id: inv.item.id, name: inv.item.name, sku: inv.item.sku } : null,
+          }))
+        : [],
     };
-    console.log(user);
-    return res.status(200).json({ token: token, user: softUser });
+    const allowedTargets = user.role && String(user.role.name).toLowerCase() === 'admin' ? ['admin'] : [];
+    return res.status(200).json({ token: token, user: softUser, allowedTargets });
   } catch (error) {
     return res.status(500).json({ error: 'Internal Server Error' });
   }

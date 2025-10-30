@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia';
 import type { Item } from '../types/domain';
-import http from '../libs/http';
+// http is now wrapped by apiClient
+import apiClient from '../libs/apiClient';
+import { formatError } from '../libs/errorHandler';
 import {
   TTL,
   isFresh,
@@ -11,7 +13,7 @@ import {
   now,
   withLoading,
 } from './_utils';
-import { unwrapList } from '../libs/api';
+// unwrapList no longer used in this store (apiClient pre-normalizes responses)
 
 type State = {
   items: Item[];
@@ -20,6 +22,10 @@ type State = {
   isLoaded: boolean;
   lastFetched: number | null;
   _reqSeq: number;
+  page: number;
+  limit: number | null;
+  total: number | null;
+  hasMore: boolean;
 };
 
 export const useItem = defineStore('item', {
@@ -30,6 +36,10 @@ export const useItem = defineStore('item', {
     isLoaded: false,
     lastFetched: null,
     _reqSeq: 0,
+    page: 0,
+    limit: null,
+    total: null,
+    hasMore: false,
   }),
 
   getters: {
@@ -43,21 +53,48 @@ export const useItem = defineStore('item', {
       this.lastFetched = null;
     },
 
-    async fetchItems(signal?: AbortSignal, force = false) {
-      if (!force && this.isLoaded && isFresh(this.lastFetched, TTL.short)) return true;
+    async fetchItems(
+      signal?: AbortSignal,
+      force = false,
+      page = 1,
+      limit: number | null = null,
+      append = false,
+    ) {
+      // if not force and already loaded recently and requesting first page, skip
+      if (!force && page === 1 && this.isLoaded && isFresh(this.lastFetched, TTL.short))
+        return true;
 
       const seq = nextSeq(this);
       return withLoading(this, async () => {
         this.error = null;
-        const res = await http('GET', '/api/auth/items', undefined, { signal, delay: 10_000 });
+        // when limit === null request full list (all=true)
+        const res =
+          limit === null
+            ? await apiClient.getItems(undefined, undefined, signal, true)
+            : await apiClient.getItems(page, limit, signal);
         if (!res.ok) {
-          if (isLatest(this, seq)) this.error = res.error ?? `HTTP ${res.status}`;
+          if (isLatest(this, seq)) this.error = formatError(res);
           return false;
         }
+
         if (isLatest(this, seq)) {
-          this.items = unwrapList<Item>(res.data);
+          const incoming = res.data ?? [];
+          if (append) this.items = [...this.items, ...incoming];
+          else this.items = incoming;
+
           this.isLoaded = true;
           this.lastFetched = now();
+          this.page = page;
+          this.limit = limit as any;
+          const meta = (res as any).meta as any;
+          if (meta) {
+            this.total = meta.total ?? null;
+            this.hasMore = meta.page * meta.limit < (meta.total ?? 0);
+          } else {
+            // if requesting full list (limit === null) consider there's no more
+            this.total = incoming.length ?? null;
+            this.hasMore = limit !== null ? incoming.length === limit : false;
+          }
         }
         return true;
       });
@@ -69,9 +106,9 @@ export const useItem = defineStore('item', {
       if (optimistic) this.items = removeById(prev, id);
 
       try {
-        const res = await http('DELETE', '/api/auth/items', { id }, { delay: 15_000 });
+        const res = await apiClient.deleteItem(id);
         if (!res.ok) {
-          this.error = res.error ?? 'Не удалось удалить товар';
+          this.error = formatError(res);
           if (optimistic) this.items = prev;
           return false;
         }
@@ -95,19 +132,14 @@ export const useItem = defineStore('item', {
       if (optimistic) this.items = [{ id: tempId, sku, name, comp } as any, ...prev];
 
       try {
-        const res = await http<{ item: Item }>(
-          'POST',
-          '/api/auth/items',
-          { sku, name, comp },
-          { delay: 20_000 },
-        );
+        const res = await apiClient.createItem({ sku, name, comp });
         if (!res.ok) {
-          this.error = res.error ?? 'Ошибка при создании';
+          this.error = formatError(res);
           if (optimistic) this.items = prev;
           return false;
         }
 
-        const payload = ((res.data as any)?.item ?? res.data) as Item | null;
+        const payload = res.data ?? null;
         if (!payload) {
           await this.fetchItems(undefined, true);
           return true;
@@ -151,28 +183,31 @@ export const useItem = defineStore('item', {
       }
 
       try {
-        const res = await http<{ data?: Item; item?: Item }>('PATCH', '/api/auth/items', {
-          id,
-          sku,
-          name,
-          comp,
-        });
+        const res = await apiClient.updateItem({ id, sku, name, comp });
         if (!res.ok) {
-          this.error = res.error ?? 'Ошибка при обновлении';
+          this.error = formatError(res);
           if (optimistic && idx !== -1 && prevItem) {
-            this.items = [...this.items.slice(0, idx), prevItem, ...this.items.slice(idx + 1)];
+            this.items = [
+              ...this.items.slice(0, idx),
+              prevItem as Item,
+              ...this.items.slice(idx + 1),
+            ];
           }
           return false;
         }
 
-        const payload = (res.data as any)?.data ?? (res.data as any)?.item ?? null;
+        const payload = res.data ?? null;
         this.items = payload ? upsertById(this.items, payload) : this.items;
         if (!payload) await this.fetchItems(undefined, true);
         return true;
       } catch (e: any) {
         this.error = e?.message ?? 'Network error';
         if (optimistic && idx !== -1 && prevItem) {
-          this.items = [...this.items.slice(0, idx), prevItem, ...this.items.slice(idx + 1)];
+          this.items = [
+            ...this.items.slice(0, idx),
+            prevItem as Item,
+            ...this.items.slice(idx + 1),
+          ];
         }
         return false;
       }
