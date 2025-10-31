@@ -1,0 +1,42 @@
+name: Build + Lighthouse
+
+on:
+  push:
+    branches: [main, master, kuvertv1]
+  pull_request:
+    branches: [main, master, kuvertv1]
+
+jobs:
+  build-and-lighthouse:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install deps
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm run build
+
+      - name: Serve dist and run Lighthouse
+        run: |
+          cd frontend
+          npx http-server dist -p 5000 -c-1 &
+          sleep 3
+          npx lighthouse http://localhost:5000 --output=json --output-path=./lighthouse-report.json --chrome-flags="--no-sandbox" --preset=mobile || true
+
+      - name: Upload Lighthouse report
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-report
+          path: frontend/lighthouse-report.json

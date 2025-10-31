@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+
+    <title>App</title>
+    <style>
+      :root {
+        --boot-card-bg: #11162a;
+        --boot-muted: #8b94a7;
+        --boot-fg: #e6e9f2;
+        --boot-accent: #7db3ff;
+        --boot-bg: radial-gradient(1200px 800px at 30% 10%, #0ea5e922, transparent),
+          radial-gradient(1000px 700px at 80% 90%, #10b98122, transparent),
+          linear-gradient(180deg, #0b1220, #111827);
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --boot-bg: radial-gradient(1200px 800px at 30% 10%, #6ea8fe22, transparent),
+            radial-gradient(1000px 700px at 80% 90%, #20c99722, transparent),
+            linear-gradient(180deg, #f7f8fb, #eef1f6);
+          --boot-card-bg: #fff;
+          --boot-muted: #667085;
+          --boot-fg: #1f2a44;
+          --boot-accent: #3b82f6;
+        }
+      }
+
+      /* BOOT OVERLAY */
+      #boot {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: var(--boot-bg);
+        z-index: 9999;
+        padding: 24px;
+        overflow: hidden;
+        transition: opacity 320ms ease, visibility 320ms ease;
+      }
+      #boot.is-hidden {
+        opacity: 0;
+        visibility: hidden;
+      }
+
+      .boot-card {
+        width: min(420px, 92vw);
+        border-radius: 16px;
+        transform: translateY(10px);
+        animation: boot-pop 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) 0.05s both;
+      }
+      @keyframes boot-pop {
+        from {
+          opacity: 0;
+          transform: translateY(18px) scale(0.98);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+
+      .boot-spinner {
+        --size: 42px;
+        width: var(--size);
+        height: var(--size);
+        margin: 4px auto 14px;
+        border-radius: 50%;
+        border: 3px solid #ffffff22;
+        border-top-color: var(--boot-accent);
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .boot-title {
+        text-align: center;
+        color: var(--boot-fg);
+        font: 600 16px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell,
+          'Helvetica Neue', Arial;
+        letter-spacing: 0.2px;
+      }
+
+      /* уважение к тем, кто отключил анимации */
+      @media (prefers-reduced-motion: reduce) {
+        .boot-card,
+        .boot-spinner {
+          animation: none !important;
+        }
+        #boot {
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="boot" aria-live="polite">
+        <div class="boot-card" role="status" aria-label="Загрузка приложения">
+          <div class="boot-spinner"></div>
+          <div class="boot-title">Загрузка приложения…</div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

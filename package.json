@@ -1,0 +1,13 @@
+{
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "concurrently": "^9.2.1"
+  },
+  "scripts": {
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:api": "cd api && npm run dev",
+    "dev": "concurrently -n front,api -c auto \"npm:dev:frontend\" \"npm:dev:api\"",
+    "build": "cd frontend && vue-tsc -b && vite build",
+    "preview": "cd frontend && vite preview"
+  }
+}
