@@ -73,6 +73,7 @@ withDefaults(
 .titleline {
   display: flex;
   align-items: center;
+  flex-direction: column;
   justify-content: space-between;
   gap: 8px;
 }
@@ -80,6 +81,7 @@ withDefaults(
   display: flex;
   gap: 8px;
   align-items: center;
+  text-wrap: wrap
 }
 .t {
   font-weight: 700;

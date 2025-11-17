@@ -149,6 +149,7 @@ export default async function transfer(req: VercelRequest, res: VercelResponse) 
               units: true,
               status: true,
               createdAt: true,
+              meta: true,
               item: { select: { id: true, name: true, sku: true } },
               fromUser: { select: { id: true, name: true } },
               toUser: { select: { id: true, name: true } },
@@ -201,7 +202,15 @@ export default async function transfer(req: VercelRequest, res: VercelResponse) 
             const created = await prisma.$transaction(async (tx) => {
               const invOps: Promise<any>[] = [];
               const now = new Date();
-              const txRows: { id: string; fromUserId: string; toUserId: string; itemId: string; units: number; status: TransactionStatus; finishedAt?: Date }[] = [];
+              // snapshot: receiver's current units before applying ops
+              const toBeforeArr = await tx.inventory.findMany({
+                where: { userId: userToId, itemId: { in: cleaned.map((x) => x.itemId) } },
+                select: { itemId: true, units: true },
+              });
+              const toBeforeMap = new Map<string, number>(
+                toBeforeArr.map((r) => [r.itemId, Number(r.units) || 0]),
+              );
+              const txRows: { id: string; fromUserId: string; toUserId: string; itemId: string; units: number; status: TransactionStatus; finishedAt?: Date; meta?: any }[] = [];
               for (const { itemId, qty } of cleaned) {
                 invOps.push(
                   tx.inventory.upsert({
@@ -225,6 +234,7 @@ export default async function transfer(req: VercelRequest, res: VercelResponse) 
                   units: qty,
                   status: TransactionStatus.accepted,
                   finishedAt: now,
+                  meta: { toUnitsBefore: toBeforeMap.get(itemId) ?? 0 },
                 });
               }
               await Promise.all(invOps);
@@ -239,6 +249,7 @@ export default async function transfer(req: VercelRequest, res: VercelResponse) 
                   status: r.status,
                   createdAt: now,
                   finishedAt: r.finishedAt ?? null,
+                  meta: r.meta ?? null,
                 }));
               } else {
                 const ids = txRows.map((r) => r.id);
@@ -253,6 +264,7 @@ export default async function transfer(req: VercelRequest, res: VercelResponse) 
                     status: true,
                     createdAt: true,
                     finishedAt: true,
+                    meta: true,
                     item: { select: { id: true, name: true, sku: true } },
                     fromUser: { select: { id: true, name: true } },
                     toUser: { select: { id: true, name: true } },
@@ -308,6 +320,15 @@ export default async function transfer(req: VercelRequest, res: VercelResponse) 
             });
             const avail = new Map(allIds.map((id) => [id, 0]));
             for (const r of inv) avail.set(r.itemId, Number(r.units));
+
+            // receiver inventory BEFORE creating transactions
+            const toBeforeArr = await tx.inventory.findMany({
+              where: { userId: userToId, itemId: { in: requestedIds } },
+              select: { itemId: true, units: true },
+            });
+            const toBeforeMap = new Map<string, number>(
+              toBeforeArr.map((r) => [r.itemId, Number(r.units) || 0]),
+            );
 
             const plan: any[] = [],
               errors: any[] = [];
@@ -427,6 +448,7 @@ export default async function transfer(req: VercelRequest, res: VercelResponse) 
               itemId: p.itemId,
               units: p.transferQty,
               status: TransactionStatus.pending,
+              meta: { toUnitsBefore: toBeforeMap.get(p.itemId) ?? 0 },
             }));
             await tx.transaction.createMany({ data: txRows2 });
             const ids2 = txRows2.map((r) => r.id);
@@ -441,6 +463,7 @@ export default async function transfer(req: VercelRequest, res: VercelResponse) 
                 status: true,
                 createdAt: true,
                 finishedAt: true,
+                meta: true,
                 item: { select: { id: true, name: true, sku: true } },
                 fromUser: { select: { id: true, name: true } },
                 toUser: { select: { id: true, name: true } },
@@ -520,6 +543,7 @@ export default async function transfer(req: VercelRequest, res: VercelResponse) 
                 status: true,
                 createdAt: true,
                 finishedAt: true,
+                meta: true,
                 item: { select: { id: true, name: true, sku: true } },
                 fromUser: { select: { id: true, name: true } },
                 toUser: { select: { id: true, name: true } },
@@ -581,6 +605,7 @@ export default async function transfer(req: VercelRequest, res: VercelResponse) 
                 item: { select: { id: true, name: true, sku: true } },
                 fromUser: { select: { id: true, name: true } },
                 toUser: { select: { id: true, name: true } },
+                meta: true,
               },
             });
             const inventories = await tx.inventory.findMany({

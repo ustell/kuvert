@@ -13,14 +13,16 @@ const props = withDefaults(defineProps<{
   allowedTargets?: Array<{ id: string | number; name: string; role?: { name?: string } | null; roleId?: string | number }>;
   disabled?: boolean;
   touched?: boolean;
-  modelValue: InventoryWithQty[]; // выбранные позиции (itemId, item?, units, qty)
+  modelValue: InventoryWithQty[]; 
   toUserId: string | null;
-  items?: any[] | null; // каталог для модалки
+  items?: any[] | null; 
+  userInv?: Inventory[]; 
 }>(), {
   allowedTargets: () => [],
   items: () => [],
+  userInv: () => [],
 });
-
+console.log(props.userInv)
 const emit = defineEmits<{
   (e: 'update:modelValue', v: InventoryWithQty[]): void;
   (e: 'update:toUserId', v: string | null): void;
@@ -46,11 +48,33 @@ function addSelectedItem(inv: any) {
   const selId = String(inv?.itemId ?? inv?.item?.id ?? inv?.id ?? '');
   const list = [...mv.value];
   const idx = list.findIndex((x) => String(x.itemId ?? x.item?.id ?? x.id ?? '') === selId);
-  if (idx >= 0) {
-    list[idx] = { ...list[idx], qty: Math.max(1, (list[idx].qty ?? 0) + 1) } as any;
+
+  
+  const unitsFromInv = (() => {
+    if (inv && inv.units != null) return Number(inv.units) || 0;
+    const map = new Map<string, number>((props.userInv ?? []).map((u: any) => [
+      String(u.itemId ?? u.item?.id ?? u.id ?? ''),
+      Number(u.units ?? 0),
+    ]));
+    return map.get(selId) ?? 0;
+  })();
+
+  
+  const itemObj = (inv?.item ?? (inv && (inv.name || inv.sku)
+    ? { id: inv.id ?? selId, name: inv.name, sku: inv.sku }
+    : undefined)) as any;
+
+  if (idx >= 0 && list[idx]) {
+    const prev = list[idx];
+    list[idx] = { ...prev, qty: Math.max(1, (prev.qty ?? 0) + 1) } as InventoryWithQty;
   } else {
-    const units = Number(inv?.units ?? (inv?.itemId && inv?.units) ?? 0);
-    list.push({ id: inv?.id, itemId: selId, item: inv?.item, units, qty: 1 } as any);
+    list.push({
+      id: inv?.id,
+      itemId: selId,
+      item: itemObj,
+      units: unitsFromInv,
+      qty: 1,
+    } as InventoryWithQty);
   }
   emit('update:modelValue', list as any);
 }
@@ -76,6 +100,7 @@ function addSelectedItem(inv: any) {
       v-model="state.open"
       title="Проверить позиции"
       :items="items ?? []"
+      :user-inv="userInv ?? []"
       @select="addSelectedItem"
     />
   </div>

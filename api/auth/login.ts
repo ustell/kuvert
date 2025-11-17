@@ -10,13 +10,18 @@ function setCors(res: VercelResponse) {
   if (origin) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCors(res);
+  console.log('req.method', req.method);
+  console.log("LOGIN");
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
@@ -54,7 +59,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!isValid) {
       return res.status(401).json({ error: 'Неверные учетные данные' });
     }
-    const secret = new TextEncoder().encode(process.env.AUTH_SECRET || '');
+    const secret = new TextEncoder().encode(process.env.AUTH_SECRET || 'dev_secret');
     const days = Number(process.env.COOKIE_MAX_DAYS || '7');
     const cookieName = process.env.COOKIE_NAME || 'session';
 
@@ -83,7 +88,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     };
     const allowedTargets = user.role && String(user.role.name).toLowerCase() === 'admin' ? ['admin'] : [];
     return res.status(200).json({ token: token, user: softUser, allowedTargets });
-  } catch (error) {
+  } catch (error: any) {
+    console.error('LOGIN_ERROR', error?.message ?? error);
     return res.status(500).json({ error: 'Internal Server Error' });
   }
 }

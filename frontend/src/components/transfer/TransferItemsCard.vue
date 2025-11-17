@@ -46,7 +46,7 @@ function dec(r: Row) {
   if (i < 0) return;
   const prev = list[i]!;
   const q = Number(prev.qty ?? 0);
-  if (q > 1) list[i] = { ...prev, qty: q - 1 } as Row;
+  if (q > 0) list[i] = { ...prev, qty: q - 1 } as Row;
   else list.splice(i, 1);
   emit('update:modelValue', list);
 }

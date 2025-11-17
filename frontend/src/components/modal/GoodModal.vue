@@ -291,7 +291,6 @@ function update() {
             >
               <span class="pill-name">{{ value.name }}</span>
               <span class="pill-right">
-                <span class="pill-sku">{{ value.sku }}</span>
                 <span class="pill-plus" aria-hidden="true">＋</span>
               </span>
             </button>

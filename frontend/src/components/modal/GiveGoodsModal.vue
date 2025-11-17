@@ -121,17 +121,14 @@ function add(item: Item) {
   if (!item?.id) return;
   if (!chosenIds.value.has(item.id)) state.chosen.push({ item, qty: 1 });
 }
-function inc(row: Row) {
-  row.qty = Math.max(1, (row.qty ?? 1) + 1);
-}
-function dec(row: Row) {
-  if ((row.qty ?? 1) > 1) row.qty--;
-  else state.chosen = state.chosen.filter((r) => r.item.id !== row.item.id);
-}
 
 function setQty(row: Row, v: number) {
-  const n = Math.max(1, Math.floor(Number(v) || 0));
-  row.qty = n;
+  const n = Math.max(0, Math.floor(Number(v) || 0));
+  if (n <= 0) {
+    state.chosen = state.chosen.filter((r) => r.item.id !== row.item.id);
+  } else {
+    row.qty = n;
+  }
 }
 
 function validate(): boolean {
@@ -173,12 +170,10 @@ function confirm() {
             <span class="sku">SKU: {{ r.item.sku ?? '—' }}</span>
           </div>
           <div class="qty">
-            <QtyControl
-              :value="r.qty"
-              @dec="() => dec(r)"
-              @inc="() => inc(r)"
-              @update:value="(v) => setQty(r, v)"
-            />
+           <QtyControl
+  :value="r.qty"
+  @update:value="(v) => setQty(r, v)"
+/>
           </div>
         </div>
       </div>

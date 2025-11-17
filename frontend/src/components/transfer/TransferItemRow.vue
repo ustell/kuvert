@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue';
 type Row = {
   id?: string | number;
   qty: number;
@@ -7,6 +8,23 @@ type Row = {
 };
 const { row, canInc, disabled } = defineProps<{ row: Row; canInc: boolean; disabled?: boolean }>();
 const emit = defineEmits<{ (e: 'inc'): void; (e: 'dec'): void; (e: 'set', v: number): void }>();
+
+const localQty = ref<string>('');
+watch(
+  () => row.qty,
+  (nv) => {
+    const s = String(nv ?? '');
+    if (s !== localQty.value) localQty.value = s;
+  },
+  { immediate: true },
+);
+function onInput(e: any) {
+  localQty.value = String(e?.target?.value ?? '');
+}
+function commitQty() {
+  const n = Math.floor(Number(localQty.value));
+  emit('set', Number.isFinite(n) ? n : 0);
+}
 </script>
 
 <template>
@@ -24,10 +42,14 @@ const emit = defineEmits<{ (e: 'inc'): void; (e: 'dec'): void; (e: 'set', v: num
         </button>
         <input
           type="number"
-          :value="row.qty"
-          class="w-14 rounded border px-2 py-1 text-center"
+          v-model="localQty"
+          class=" rounded border px-2 py-1 text-center"
           :disabled="!!disabled"
-          @input="(e: any) => emit('set', Math.max(1, Number(e?.target?.value ?? 1)))"
+          inputmode="numeric"
+          pattern="[0-9]*"
+          @input="onInput"
+          @blur="commitQty"
+          @keydown.enter.prevent="commitQty"
         />
         <button
           class="rounded bg-gray-100 px-2 py-1"

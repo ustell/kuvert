@@ -4,20 +4,18 @@ import SearchBar from '../SearchBar.vue';
 import LoadingList from '../common/LoadingList.vue';
 import { computed, onMounted } from 'vue';
 import { useDebouncedRef } from '../../composables/useDebouncedRef';
-import type { Inventory, Item } from '../../types/domain';
+import type { Item } from '../../types/domain';
 import { useItem } from '../../stores/item';
 
 const props = defineProps<{
   modelValue: boolean;
   title: string;
-  userInv?: Inventory[] | undefined;
-  // optional explicit items list (global catalog). If provided, modal shows these items.
+  userInv?: any[] | undefined;
+  
   items?: Item[] | undefined;
 }>();
-
 const emit = defineEmits<{
   (e: 'update:modelValue', v: boolean): void;
-  // emit any — we may emit an inventory-like object constructed from an Item
   (e: 'select', v: any): void;
 }>();
 
@@ -33,36 +31,63 @@ onMounted(() => {
   if (!itemStore.isLoaded) itemStore.fetchItems().catch(() => {});
 });
 
-// produce a list of Item objects to render: prefer explicit props.items, then global store items,
-// finally fall back to mapping user inventory -> their .item
+
+
 const displayItems = computed(() => {
-  const q = String(search.value ?? '')
-    .toLowerCase()
-    .trim();
-  const source: Item[] = (props.items && props.items.length ? props.items : itemStore.items) ?? [];
-  // if no global items available, try mapping from userInv
-  if (!source.length && props.userInv && props.userInv.length) {
-    const mapped = props.userInv.map((inv) => inv.item).filter(Boolean) as Item[];
-    if (!q) return mapped;
-    return mapped.filter((it) => {
-      const name = String(it.name ?? '').toLowerCase();
-      const sku = String((it as any).sku ?? '').toLowerCase();
-      return name.includes(q) || sku.includes(q);
+  const query = String(search.value ?? '').trim().toLowerCase();
+  const inventoryMap = new Map<string | number, number>();
+  const inventorySkuMap = new Map<string, number>();
+  if (props.userInv?.length) {
+    props.userInv.forEach(inv => {
+      const qty = Number(inv?.units || 0);
+      const id1 = inv?.itemId != null ? String(inv.itemId) : '';
+      const id2 = inv?.item?.id != null ? String(inv.item.id) : '';
+      const sku = inv?.item?.sku ? String(inv.item.sku) : '';
+      if (id1) inventoryMap.set(id1, qty);
+      if (id2) inventoryMap.set(id2, qty);
+      if (sku) inventorySkuMap.set(sku, qty);
     });
   }
-
-  if (!q) return source;
-  return source.filter((it) => {
-    const name = String(it.name ?? '').toLowerCase();
-    const sku = String((it as any).sku ?? '').toLowerCase();
-    return name.includes(q) || sku.includes(q);
+  
+  
+  const sourceItems = props.items?.length ? props.items : itemStore.items ?? [];
+  
+  
+  const itemsWithQuantities = sourceItems.map(item => ({
+    ...item,
+    quantity:
+      inventoryMap.get(String(item.id)) ??
+      (item?.sku ? inventorySkuMap.get(String(item.sku)) : undefined) ??
+      0,
+  }));
+  
+  
+  if (!query) return itemsWithQuantities;
+  
+  return itemsWithQuantities.filter(item => {
+    const name = String(item.name || '').toLowerCase();
+    const sku = String(item.sku || '').toLowerCase();
+    const quantity = String(item.quantity || 0);
+    
+    return name.includes(query) || 
+           sku.includes(query) || 
+           quantity.includes(query);
   });
 });
 
+function getQty(it?: any): number {
+  const id = String(it?.id ?? '');
+  const sku = it?.sku ? String(it.sku) : '';
+  if (!id && !sku) return Number(it?.quantity ?? 0) || 0;
+  const inv = (props.userInv ?? []);
+  let entry = inv.find(u => String(u.itemId ?? '') === id);
+  if (!entry && sku) entry = inv.find(u => String(u?.item?.sku ?? '') === sku);
+  return Number(entry?.units ?? it?.quantity ?? 0) || 0;
+}
+
 const onSelectItem = (item?: Item) => {
   if (!item) return;
-  // emit a lightweight inventory-like object so parent handlers that expect Inventory still work
-  const asInv: Partial<Inventory> = {
+  const asInv: Partial<any> = {
     id: undefined,
     itemId: String(item.id ?? ''),
     item: item as any,
@@ -98,8 +123,8 @@ const onSelectItem = (item?: Item) => {
             :title="it.name"
             @click="onSelectItem(it)"
           >
-            <span class="chip-dot" aria-hidden="true"></span>
             <span class="chip-text">{{ it.name ?? '—' }}</span>
+            <span class="quantity">({{ getQty(it) }})</span>
           </li>
         </ul>
       </div>
@@ -109,7 +134,6 @@ const onSelectItem = (item?: Item) => {
 
 <style scoped>
 .form {
-  padding: 12px 20px 4px;
   max-height: min(48vh, 420px);
   overflow: auto;
 }
@@ -142,9 +166,14 @@ const onSelectItem = (item?: Item) => {
   opacity: 0.7;
 }
 .chip-text {
-  white-space: nowrap;
+  white-space: wrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 280px;
+}
+.quantity {
+  color: #4b5563;
+  font-size: 12px;
+  margin-left: 6px;
 }
 </style>

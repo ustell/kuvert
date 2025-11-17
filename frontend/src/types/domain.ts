@@ -35,6 +35,7 @@ export interface Item {
   sku: string;
   isActive: boolean;
   recipesOf: Recipe[];
+  quantity?: number; // Добавляем необязательное поле для отображения количества
 }
 
 export interface Recipe {

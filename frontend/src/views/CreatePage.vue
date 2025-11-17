@@ -14,6 +14,7 @@ import { useItem } from '../stores/item';
 import { useAction } from '../composables/useAction';
 import { useFormat } from '../composables/useFormat';
 import { useNotify } from '../stores/notify';
+import { useInventory } from '../stores/inventory';
 
 type InventoryWithQty = Inventory & { qty: number };
 type State = {
@@ -30,6 +31,7 @@ const users = useUsers();
 const trans = useTrans();
 const notify = useNotify();
 const abortCtl = new AbortController();
+const inventory = useInventory();
 
 const items = useItem();
 
@@ -107,7 +109,7 @@ function showErrors(msgs: string[]) {
 function extractErrorMessages(res: any, fallbackTop: string): string[] {
   const details: string[] = [];
 
-  // 1) issues (если стор их отдаёт)
+  
   if (Array.isArray(res?.issues)) {
     for (const it of res.issues) {
       const m =
@@ -133,8 +135,8 @@ function extractErrorMessages(res: any, fallbackTop: string): string[] {
     return [top];
   }
 
-  // 4) есть детальные — возвращаем только их (без общего top)
-  //    + уберём явные «json-подобные» строки
+  
+  
   return details.filter((s) => {
     const text = String(s);
     const looksLikeJson = text.startsWith('{') || text.startsWith('[');
@@ -208,7 +210,7 @@ async function save() {
     notify.success('Передача создана', 2500);
     state.userInv = [];
     toUserId.value = null;
-    // refresh outgoing list explicitly (mine='from') to reflect newly created transfers
+    
     const id = String(currentUser.value?.id || '');
     await trans.fetchItems({ reset: true, mine: 'from', userId: id, status: 'all', signal: abortCtl.signal }).catch(() => {});
     return;
@@ -218,14 +220,13 @@ async function save() {
   state.error = showErrors(msgs);
 }
 
-onMounted(() => {
+onMounted(async () => {
   const id = String(currentUser.value?.id || '');
-  // Always load outgoing transfers for this page. Bootstrap may have filled incoming (mine='to'),
-  // so relying on hasData could skip needed fetch.
   trans
     .fetchItems({ reset: true, mine: 'from', userId: id, status: 'all', signal: abortCtl.signal })
     .catch(console.error);
   if (!items.isLoaded) items.fetchItems().catch(() => {});
+  if (id) await inventory.fetchUserInventory(id).catch(() => {});
 });
 
 watch(
@@ -235,6 +236,18 @@ watch(
     if (id) trans.fetchItems({ reset: true, mine: 'from', userId: id, status: 'all', signal: abortCtl.signal }).catch(() => {});
   },
 );
+
+// Inventory for modal: prefer data already present in auth.me (faster, consistent),
+// fallback to inventory store if needed
+const currentUserInventory = computed(() => {
+  const uid = String(currentUser.value?.id || '');
+  if (!uid) return [];
+  const fromAuth = ((auth.users as any)?.inventories ?? []) as any[];
+  const fromStore = inventory.inventories[uid] || [];
+  const base = Array.isArray(fromAuth) && fromAuth.length ? fromAuth : fromStore;
+  return base.map((item: any) => ({ ...item, qty: 1 }));
+});
+
 onBeforeUnmount(() => abortCtl.abort());
 
 const myRecent = computed(() =>
@@ -254,6 +267,7 @@ const myRecent = computed(() =>
       :disabled="trans.creating"
       :touched="state.touched"
       :items="items.items"
+      :user-inv="currentUserInventory"
     />
 
 <Button

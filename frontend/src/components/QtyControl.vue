@@ -69,7 +69,6 @@ function onInput(e: Event) {
   padding: 2px 6px;
 }
 .qty-input {
-  width: 56px;
   text-align: center;
   border: 1px solid #e5e7eb;
   border-radius: 6px;
